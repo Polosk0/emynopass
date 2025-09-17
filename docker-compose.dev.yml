@@ -1,0 +1,66 @@
+# Configuration Docker Compose pour le développement
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: emynopass-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+    networks:
+      - emynopass-network-dev
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: emynopass-backend-dev
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - DATABASE_PATH=/app/data/emynopass-dev.db
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=dev-jwt-secret-not-for-production
+      - PORT=3001
+      - FRONTEND_URL=http://localhost:3000
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./backend/src:/app/src:ro  # Montage du code source pour le développement
+    depends_on:
+      - redis
+    networks:
+      - emynopass-network-dev
+    command: ["npm", "run", "dev"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: emynopass-frontend-dev
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - emynopass-network-dev
+    volumes:
+      - ./frontend/src:/app/src:ro  # Montage du code source pour le développement
+
+volumes:
+  redis_data_dev:
+    driver: local
+
+networks:
+  emynopass-network-dev:
+    driver: bridge
+

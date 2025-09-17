@@ -1,15 +1,15 @@
 @echo off
-title Emynopass - Demarrage
+title Emynopass - Demarrage Docker
 color 0A
 
 echo.
 echo ===============================
-echo      EMYNOPASS - START
+echo   EMYNOPASS - DOCKER START
 echo ===============================
 echo.
 
-echo [1/6] Verification du dossier...
-if not exist "package.json" (
+echo [1/5] Verification du dossier...
+if not exist "docker-compose.yml" (
     echo ERREUR: Pas dans le bon dossier
     pause
     exit /b 1
@@ -17,55 +17,56 @@ if not exist "package.json" (
 echo OK - Dans le bon dossier
 
 echo.
-echo [2/6] Arret des services existants...
-docker-compose down >nul 2>&1
-taskkill /F /IM node.exe >nul 2>&1
-timeout /t 2 >nul
-echo OK - Services arretes
-
-echo.
-echo [3/6] Demarrage Redis...
-docker-compose up -d redis
+echo [2/5] Verification de Docker...
+docker --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ERREUR: Impossible de demarrer Redis
+    echo ERREUR: Docker n'est pas installe ou demarre
+    echo Veuillez installer Docker Desktop et le demarrer
     pause
     exit /b 1
 )
-echo OK - Redis demarre
-timeout /t 3 >nul
+echo OK - Docker disponible
 
 echo.
-echo [4/6] Installation des dependances...
-cd backend
-call npm install >nul 2>&1
-cd ../frontend  
-call npm install >nul 2>&1
-cd ..
-echo OK - Dependances installees
+echo [3/5] Arret des services existants...
+docker-compose down >nul 2>&1
+echo OK - Services arretes
 
 echo.
-echo [5/6] Demarrage du Backend...
-cd backend
-start "Backend Emynopass" cmd /k "npm run dev"
-cd ..
-echo Attente du demarrage du backend...
+echo [4/5] Construction et demarrage des conteneurs...
+echo Construction des images Docker...
+docker-compose build --no-cache
+if %errorlevel% neq 0 (
+    echo ERREUR: Echec de la construction des images
+    pause
+    exit /b 1
+)
 
-:wait_backend
-timeout /t 2 >nul
+echo Demarrage des services...
+docker-compose up -d
+if %errorlevel% neq 0 (
+    echo ERREUR: Echec du demarrage des services
+    pause
+    exit /b 1
+)
+
+echo.
+echo [5/5] Attente du demarrage complet...
+echo Verification de la disponibilite des services...
+
+:wait_services
+timeout /t 5 >nul
 powershell -Command "try { Invoke-WebRequest -Uri 'http://localhost:3001/health' -UseBasicParsing -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo Backend en cours de demarrage...
-    goto wait_backend
+    echo Services en cours de demarrage...
+    goto wait_services
 )
-echo OK - Backend operationnel !
 
-echo.
-echo [6/6] Demarrage du Frontend...
-cd frontend
-start "Frontend Emynopass" cmd /k "npm run dev"
-cd ..
-echo Attente du demarrage du frontend...
-timeout /t 5 >nul
+powershell -Command "try { Invoke-WebRequest -Uri 'http://localhost:3000' -UseBasicParsing -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Frontend en cours de demarrage...
+    goto wait_services
+)
 
 echo.
 echo ===============================

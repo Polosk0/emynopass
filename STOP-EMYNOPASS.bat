@@ -1,31 +1,37 @@
 @echo off
-title Emynopass - Arret
+title Emynopass - Arret Docker
 color 0C
 
 echo.
 echo ===============================
-echo      EMYNOPASS - STOP
+echo   EMYNOPASS - DOCKER STOP
 echo ===============================
 echo.
 
-echo [1/3] Arret des services Node.js...
-taskkill /F /IM node.exe >nul 2>&1
-echo OK - Node.js arrete
+echo [1/2] Verification de Docker...
+docker --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ERREUR: Docker n'est pas disponible
+    pause
+    exit /b 1
+)
+echo OK - Docker disponible
 
 echo.
-echo [2/3] Arret des conteneurs Docker...
-docker-compose down >nul 2>&1
-echo OK - Docker arrete
-
-echo.
-echo [3/3] Nettoyage des processus...
-timeout /t 2 >nul
-echo OK - Nettoyage termine
+echo [2/2] Arret des conteneurs Docker...
+docker-compose down
+if %errorlevel% neq 0 (
+    echo ATTENTION: Probleme lors de l'arret des conteneurs
+) else (
+    echo OK - Conteneurs arretes
+)
 
 echo.
 echo ===============================
 echo   EMYNOPASS ARRETE !
 echo ===============================
+echo.
+echo Pour redemarrer: START-EMYNOPASS.bat
 echo.
 
 pause

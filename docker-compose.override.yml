@@ -1,0 +1,21 @@
+# Configuration de développement (surcharge)
+# Ce fichier est automatiquement utilisé par docker-compose
+version: '3.8'
+
+services:
+  backend:
+    environment:
+      - NODE_ENV=development
+      - DATABASE_PATH=/app/data/emynopass-dev.db
+    volumes:
+      # Montage du code source pour le développement
+      - ./backend/src:/app/src:ro
+    command: ["npm", "run", "dev"]
+
+  frontend:
+    environment:
+      - VITE_API_URL=http://localhost:3001
+    volumes:
+      # Montage du code source pour le développement
+      - ./frontend/src:/app/src:ro
+

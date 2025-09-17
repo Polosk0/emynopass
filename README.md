@@ -87,12 +87,27 @@ graph TB
 ## 🚀 Installation Rapide
 
 ### Prérequis
-- **Node.js** 18+ et npm
-- **Docker** et Docker Compose (optionnel)
+- **Docker** et Docker Compose (recommandé)
+- **Node.js** 18+ et npm (pour développement)
 - **Git**
 
 ### 🐳 Avec Docker (Recommandé)
 
+#### Démarrage Ultra-Rapide
+```bash
+# 1. Cloner le projet
+git clone https://github.com/Polosk0/emynopass.git
+cd emynopass
+
+# 2. Démarrage automatique (Windows)
+START-EMYNOPASS.bat
+
+# 2. Démarrage automatique (Linux/macOS)
+chmod +x start-emynopass.sh
+./start-emynopass.sh
+```
+
+#### Démarrage Manuel
 ```bash
 # 1. Cloner le projet
 git clone https://github.com/Polosk0/emynopass.git
@@ -108,6 +123,27 @@ docker-compose up -d
 # 4. Accès à l'application
 # Frontend: http://localhost:3000
 # Backend: http://localhost:3001
+```
+
+#### Commandes Docker Utiles
+```bash
+# Construire les images
+npm run docker:build
+
+# Démarrer les services
+npm run docker:up
+
+# Voir les logs
+npm run docker:logs
+
+# Arrêter les services
+npm run docker:down
+
+# Mode production (avec nginx)
+npm run docker:prod
+
+# Nettoyer complètement
+npm run docker:clean
 ```
 
 ### 📦 Installation Manuelle

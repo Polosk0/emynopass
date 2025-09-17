@@ -16,9 +16,14 @@
     "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "clean": "rimraf node_modules backend/node_modules frontend/node_modules",
     "clean:build": "rimraf backend/dist frontend/dist",
+    "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
+    "docker:restart": "docker-compose restart",
+    "docker:clean": "docker-compose down --rmi all --volumes --remove-orphans",
+    "docker:dev": "docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d",
+    "docker:prod": "docker-compose --profile production up -d",
     "db:studio": "cd backend && npx prisma studio",
     "test": "echo \"No tests specified\" && exit 0"
   },
@@ -32,6 +37,7 @@
   "author": "FileShare Team",
   "license": "MIT",
   "devDependencies": {
+    "@types/express-validator": "^2.20.33",
     "concurrently": "^8.2.2",
     "rimraf": "^5.0.5"
   },
@@ -42,5 +48,8 @@
   "repository": {
     "type": "git",
     "url": "."
+  },
+  "dependencies": {
+    "express-validator": "^7.2.1"
   }
 }
