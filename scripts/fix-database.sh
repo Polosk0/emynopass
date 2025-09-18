@@ -21,3 +21,4 @@ chmod 666 data/emynopass.db 2>/dev/null || echo "⚠️  Impossible de modifier 
 
 echo "✅ Correction terminée !"
 echo "📁 Base de données disponible dans: $(pwd)/data/emynopass.db"
+
