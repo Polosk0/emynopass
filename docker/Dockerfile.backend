@@ -1,49 +1,37 @@
-# Dockerfile pour le backend Emynopass
+# Dockerfile backend ultra-simplifié
 FROM node:18-alpine
 
-# Installer les dépendances système nécessaires
-RUN apk add --no-cache wget
+# Installer les dépendances système
+RUN apk add --no-cache wget sqlite
 
 # Définir le répertoire de travail
 WORKDIR /app
 
-# Copier les fichiers de configuration du backend
+# Copier les fichiers
 COPY backend/package*.json ./
-
-# Installer les dépendances (production et dev pour le build)
 RUN npm ci
 
-# Copier le code source du backend
 COPY backend/ ./
-
-# Compiler TypeScript
 RUN npm run build
 
-# Supprimer les dépendances de développement
-RUN npm prune --production
-
-# Créer les dossiers nécessaires
+# Créer les dossiers avec permissions
 RUN mkdir -p /app/data /app/uploads /app/logs
+RUN chmod -R 777 /app/data /app/uploads /app/logs
 
-# Créer un utilisateur non-root
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S emynopass -u 1001
+# Créer une base de données SQLite vide pour éviter les erreurs
+RUN touch /app/data/emynopass.db
+RUN chmod 666 /app/data/emynopass.db
 
-# Changer les permissions
-RUN chown -R emynopass:nodejs /app
-USER emynopass
+# S'assurer que le dossier data est accessible
+RUN chown -R node:node /app/data
 
 # Exposer le port
 EXPOSE 3001
 
-# Variables d'environnement par défaut
+# Variables d'environnement
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV DATABASE_PATH=/app/data/emynopass.db
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
-
 # Commande de démarrage
-CMD ["npm", "start"]
+CMD ["node", "dist/index.js"]

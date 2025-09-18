@@ -49,7 +49,12 @@ class Database {
 
   constructor() {
         // Utiliser un fichier SQLite persistant
-        this.dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'emynopass.db');
+        // En Docker, utiliser /app/data, sinon utiliser le chemin relatif
+        if (process.env.NODE_ENV === 'production' && process.env.DATABASE_PATH) {
+          this.dbPath = process.env.DATABASE_PATH;
+        } else {
+          this.dbPath = path.join(process.cwd(), 'data', 'emynopass.db');
+        }
     
     // Créer le dossier data s'il n'existe pas
     const dataDir = path.dirname(this.dbPath);
@@ -57,12 +62,27 @@ class Database {
       fs.mkdirSync(dataDir, { recursive: true });
     }
     
-    this.db = new sqlite3.Database(this.dbPath);
-    console.log(`📦 Database path: ${this.dbPath}`);
+    this.db = new sqlite3.Database(this.dbPath, (err) => {
+      if (err) {
+        console.error('❌ Erreur connexion SQLite:', err);
+        throw err;
+      }
+      console.log(`📦 Database path: ${this.dbPath}`);
+    });
   }
 
   async init(): Promise<void> {
     return new Promise((resolve, reject) => {
+      // Vérifier d'abord la connectivité
+      this.db.get('SELECT 1', (err) => {
+        if (err) {
+          console.error('❌ Erreur test connectivité SQLite:', err);
+          reject(err);
+          return;
+        }
+        console.log('✅ Connexion SQLite testée avec succès');
+      });
+
       this.db.serialize(() => {
         // Table Users
         this.db.run(`

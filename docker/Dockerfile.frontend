@@ -1,4 +1,4 @@
-# Dockerfile pour le frontend Emynopass
+# Dockerfile pour le frontend Emynopass - Version Simplifiée
 FROM node:18-alpine as builder
 
 # Définir le répertoire de travail
@@ -19,33 +19,14 @@ RUN npm run build
 # Stage de production avec nginx
 FROM nginx:alpine
 
-# Installer wget pour les health checks
-RUN apk add --no-cache wget
-
 # Copier les fichiers buildés
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copier la configuration nginx personnalisée
 COPY docker/nginx-frontend.conf /etc/nginx/conf.d/default.conf
 
-# Créer un utilisateur non-root
-RUN addgroup -g 1001 -S nginx
-RUN adduser -S emynopass -u 1001 -G nginx
-
-# Changer les permissions
-RUN chown -R emynopass:nginx /usr/share/nginx/html
-RUN chown -R emynopass:nginx /var/cache/nginx
-RUN chown -R emynopass:nginx /var/log/nginx
-RUN chown -R emynopass:nginx /etc/nginx/conf.d
-RUN touch /var/run/nginx.pid
-RUN chown -R emynopass:nginx /var/run/nginx.pid
-
 # Exposer le port
 EXPOSE 3000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
 
 # Commande de démarrage
 CMD ["nginx", "-g", "daemon off;"]
