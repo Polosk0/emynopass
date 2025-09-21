@@ -32,7 +32,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<{ id: string; name: string } | null>(null);
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
   const fetchUploadedFiles = useCallback(async () => {
     if (!token) return;

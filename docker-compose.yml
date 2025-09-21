@@ -1,31 +1,16 @@
 version: '3.8'
 
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: emynopass-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - emynopass-network
-
   backend:
     build:
       context: .
       dockerfile: docker/Dockerfile.backend
     container_name: emynopass-backend
-    restart: "no"  # Pas de redémarrage automatique pour debug
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
       - DATABASE_PATH=/app/data/emynopass.db
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=${JWT_SECRET:-default-jwt-secret-change-in-production}
+      - JWT_SECRET=default-jwt-secret-change-in-production
       - PORT=3001
       - FRONTEND_URL=https://emynona.cloud
     ports:
@@ -34,9 +19,6 @@ services:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
       - ./backend/data:/app/data
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
       - emynopass-network
     command: ["node", "dist/index.js"]
@@ -48,7 +30,7 @@ services:
     container_name: emynopass-frontend
     restart: unless-stopped
     environment:
-      - VITE_API_URL=https://api.emynona.cloud
+      - VITE_API_URL=https://emynona.cloud
     ports:
       - "0.0.0.0:3000:3000"
     networks:
@@ -62,10 +44,9 @@ services:
     restart: unless-stopped
     ports:
       - "0.0.0.0:80:80"
-      - "0.0.0.0:443:443"
     volumes:
+      - ./docker/nginx-simple.conf:/etc/nginx/conf.d/default.conf:ro
       - ./uploads:/var/www/uploads:ro
-      - ./docker/nginx-production.conf:/etc/nginx/conf.d/default.conf:ro
       - ./logs:/var/log/nginx:rw
     depends_on:
       - frontend

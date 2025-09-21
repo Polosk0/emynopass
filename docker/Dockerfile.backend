@@ -1,5 +1,5 @@
 # Dockerfile backend ultra-simplifié
-FROM node:18-alpine
+FROM node:18-alpine AS builder
 
 # Installer les dépendances système
 RUN apk add --no-cache wget sqlite
