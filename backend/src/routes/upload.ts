@@ -24,19 +24,29 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB max
-  },
-  fileFilter: (req, file, cb) => {
-    // Accepter tous les types de fichiers
-    cb(null, true);
-  }
-});
+// Configuration multer dynamique selon le rôle
+const createUploadMiddleware = (isAdmin: boolean) => {
+  return multer({
+    storage,
+    limits: {
+      fileSize: isAdmin ? 50 * 1024 * 1024 * 1024 : 10 * 1024 * 1024 * 1024 // 50GB pour admins, 10GB pour autres
+    },
+    fileFilter: (req, file, cb) => {
+      // Accepter tous les types de fichiers
+      cb(null, true);
+    }
+  });
+};
+
+// Middleware d'upload dynamique selon le rôle
+const dynamicUpload = (req: AuthRequest, res: Response, next: any) => {
+  const isAdmin = req.user?.role === 'ADMIN';
+  const uploadMiddleware = createUploadMiddleware(isAdmin);
+  uploadMiddleware.array('files', 10)(req, res, next);
+};
 
 // Route d'upload multiple (authentification requise)
-router.post('/files', authenticateToken, upload.array('files', 10), handleMulterError, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/files', authenticateToken, dynamicUpload, handleMulterError, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.files || req.files.length === 0) {
       res.status(400).json({
@@ -46,8 +56,55 @@ router.post('/files', authenticateToken, upload.array('files', 10), handleMulter
     }
 
     const files = req.files as Express.Multer.File[];
-    const uploadedFiles = [];
     const userId = req.user!.id;
+    const user = req.user!;
+    
+    // Vérifier les limites selon le type de compte
+    const isDemoAccount = user.isDemo;
+    const isAdminAccount = user.role === 'ADMIN';
+    
+    // Les admins n'ont aucune limite
+    if (!isAdminAccount) {
+      const userStorageUsed = await database.getUserStorageUsed(userId);
+      const newFilesSize = files.reduce((total, file) => total + file.size, 0);
+      
+      // Limites différentes pour compte démo vs normal
+      const maxUserStorage = isDemoAccount ? 100 * 1024 * 1024 : 200 * 1024 * 1024 * 1024; // 100 MB vs 200 GB
+      const maxFileSize = isDemoAccount ? 10 * 1024 * 1024 : 10 * 1024 * 1024 * 1024; // 10 MB vs 10 GB
+      const maxFileCount = isDemoAccount ? 3 : 10; // 3 fichiers vs 10 fichiers
+      
+      // Vérifier la limite de stockage
+      if (userStorageUsed + newFilesSize > maxUserStorage) {
+        const remainingSpace = maxUserStorage - userStorageUsed;
+        const limitText = isDemoAccount ? '100 MB' : '200 GB';
+        res.status(413).json({
+          error: `Limite de stockage atteinte. Vous avez utilisé ${formatFileSize(userStorageUsed)} sur ${limitText}. Espace restant: ${formatFileSize(remainingSpace)}`
+        });
+        return;
+      }
+      
+      // Vérifier la limite de nombre de fichiers
+      if (files.length > maxFileCount) {
+        const limitText = isDemoAccount ? '3 fichiers' : '10 fichiers';
+        res.status(413).json({
+          error: `Limite de fichiers atteinte. Maximum ${limitText} par upload.`
+        });
+        return;
+      }
+      
+      // Vérifier la taille des fichiers individuels
+      const oversizedFiles = files.filter(file => file.size > maxFileSize);
+      if (oversizedFiles.length > 0) {
+        const limitText = isDemoAccount ? '10 MB' : '10 GB';
+        const fileNames = oversizedFiles.map(f => f.originalname).join(', ');
+        res.status(413).json({
+          error: `Fichier(s) trop volumineux : ${fileNames}. Limite par fichier : ${limitText}`
+        });
+        return;
+      }
+    }
+
+    const uploadedFiles = [];
 
     // Date d'expiration : 7 jours à partir de maintenant
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -126,6 +183,64 @@ router.get('/files', authenticateToken, async (req: AuthRequest, res: Response):
   }
 });
 
+// Route pour obtenir les informations de stockage de l'utilisateur
+router.get('/storage-info', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const user = req.user!;
+    const isDemoAccount = user.isDemo;
+    const isAdminAccount = user.role === 'ADMIN';
+    
+    const usedStorage = await database.getUserStorageUsed(userId);
+    
+    if (isAdminAccount) {
+      // Les admins n'ont aucune limite
+      console.log('Admin account detected, returning unlimited storage info');
+      const adminResponse = {
+        used: usedStorage,
+        usedFormatted: formatFileSize(usedStorage),
+        max: -1, // -1 indique aucune limite
+        maxFormatted: 'Illimité',
+        remaining: -1,
+        remainingFormatted: 'Illimité',
+        percentage: 0,
+        maxFileSize: -1,
+        maxFileSizeFormatted: 'Illimité',
+        isDemo: false,
+        isAdmin: true,
+        maxFileCount: -1
+      };
+      console.log('Admin response:', adminResponse);
+      res.json(adminResponse);
+    } else {
+      // Limites pour utilisateurs normaux et démo
+      const maxStorage = isDemoAccount ? 100 * 1024 * 1024 : 200 * 1024 * 1024 * 1024; // 100 MB vs 200 GB
+      const maxFileSize = isDemoAccount ? 10 * 1024 * 1024 : 10 * 1024 * 1024 * 1024; // 10 MB vs 10 GB
+      const remainingStorage = maxStorage - usedStorage;
+      
+      res.json({
+        used: usedStorage,
+        usedFormatted: formatFileSize(usedStorage),
+        max: maxStorage,
+        maxFormatted: formatFileSize(maxStorage),
+        remaining: remainingStorage,
+        remainingFormatted: formatFileSize(remainingStorage),
+        percentage: (usedStorage / maxStorage) * 100,
+        maxFileSize: maxFileSize,
+        maxFileSizeFormatted: formatFileSize(maxFileSize),
+        isDemo: isDemoAccount,
+        isAdmin: false,
+        maxFileCount: isDemoAccount ? 3 : 10
+      });
+    }
+  } catch (error) {
+    console.error('Erreur récupération info stockage:', error);
+    res.status(500).json({
+      error: 'Erreur serveur'
+    });
+  }
+});
+
 // Route pour télécharger un fichier
 router.get('/download/:fileId', optionalAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -194,6 +309,10 @@ router.delete('/files/:fileId', authenticateToken, async (req: AuthRequest, res:
       return;
     }
 
+    // Supprimer les partages liés à ce fichier
+    const deletedShares = await database.deleteSharesByFileId(fileId);
+    console.log(`🗑️ Supprimé ${deletedShares} partage(s) lié(s) au fichier ${fileId}`);
+
     // Supprimer le fichier de la base de données
     await database.deleteFile(fileId);
 
@@ -203,7 +322,8 @@ router.delete('/files/:fileId', authenticateToken, async (req: AuthRequest, res:
     }
 
     res.json({
-      message: 'Fichier supprimé avec succès'
+      message: 'Fichier supprimé avec succès',
+      deletedShares: deletedShares
     });
   } catch (error) {
     console.error('Erreur suppression:', error);

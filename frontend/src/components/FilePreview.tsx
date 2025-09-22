@@ -156,14 +156,14 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
 
   const renderPreview = () => {
     if (!previewInfo || !previewInfo.canPreview) {
-      return (
-        <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-          <AlertCircle className="h-16 w-16 mb-4" />
-          <p className="text-lg font-medium">Prévisualisation non disponible</p>
-          <p className="text-sm">Ce type de fichier ne peut pas être prévisualisé</p>
-          <p className="text-xs mt-2 text-gray-400">{previewInfo?.mimetype}</p>
-        </div>
-      );
+        return (
+          <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+            <AlertCircle className="h-16 w-16 mb-4" />
+            <p className="text-lg font-medium">Prévisualisation non disponible</p>
+            <p className="text-sm">Ce type de fichier ne peut pas être prévisualisé</p>
+            <p className="text-xs mt-2 text-gray-500">{previewInfo?.mimetype}</p>
+          </div>
+        );
     }
 
     switch (previewInfo.previewType) {
@@ -223,7 +223,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
       case 'text':
         return (
           <div className={`w-full ${isFullscreen ? 'h-screen' : 'max-h-96'} overflow-auto`}>
-            <pre className="bg-gray-50 p-4 rounded-lg text-sm font-mono whitespace-pre-wrap break-words">
+            <pre className="bg-gray-800/50 p-4 rounded-lg text-sm font-mono whitespace-pre-wrap break-words text-gray-300 border border-gray-700">
               {textContent || 'Chargement du contenu...'}
             </pre>
           </div>
@@ -231,7 +231,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
 
       default:
         return (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+          <div className="flex flex-col items-center justify-center h-64 text-gray-400">
             <FileIcon className="h-16 w-16 mb-4" />
             <p>Type de fichier non supporté pour la prévisualisation</p>
           </div>
@@ -241,10 +241,10 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-8 max-w-4xl max-h-screen overflow-auto">
+      <div className="fixed inset-0 bg-gray-950 bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="glass-card rounded-lg p-8 max-w-4xl max-h-screen overflow-auto shadow-2xl">
           <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-400"></div>
           </div>
         </div>
       </div>
@@ -252,18 +252,18 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
   }
 
   return (
-    <div className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 ${isFullscreen ? 'p-0' : ''}`}>
-      <div className={`bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-screen overflow-auto ${isFullscreen ? 'rounded-none max-w-none h-full' : ''}`}>
+    <div className={`fixed inset-0 bg-gray-950 bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 p-4 ${isFullscreen ? 'p-0' : ''}`}>
+      <div className={`glass-card rounded-lg shadow-2xl max-w-6xl w-full max-h-screen overflow-auto ${isFullscreen ? 'rounded-none max-w-none h-full' : ''}`}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+        <div className="flex items-center justify-between p-4 border-b border-gray-700 bg-gray-800/50 rounded-t-lg">
           <div className="flex items-center space-x-3">
             {previewInfo && getFileIcon(previewInfo.mimetype)}
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 truncate max-w-md">
+              <h3 className="text-lg font-semibold text-white truncate max-w-md">
                 {filename}
               </h3>
               {previewInfo && (
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-400">
                   {previewInfo.mimetype} • {formatFileSize(previewInfo.size)}
                 </p>
               )}
@@ -274,7 +274,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
             {previewInfo && previewInfo.canPreview && (
               <button
                 onClick={() => setIsFullscreen(!isFullscreen)}
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors action-button"
                 title={isFullscreen ? "Quitter le plein écran" : "Plein écran"}
               >
                 {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
@@ -283,7 +283,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
             
             <button
               onClick={onClose}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors action-button"
               title="Fermer"
             >
               <X className="h-5 w-5" />
@@ -292,9 +292,9 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-6 bg-gray-900/30">
           {error ? (
-            <div className="flex flex-col items-center justify-center h-64 text-red-500">
+            <div className="flex flex-col items-center justify-center h-64 text-red-400">
               <AlertCircle className="h-16 w-16 mb-4" />
               <p className="text-lg font-medium">Erreur de prévisualisation</p>
               <p className="text-sm">{error}</p>
@@ -306,10 +306,10 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
 
         {/* Footer */}
         {!isFullscreen && (
-          <div className="flex justify-end p-4 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+          <div className="flex justify-end p-4 border-t border-gray-700 bg-gray-800/50 rounded-b-lg">
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+              className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors action-button"
             >
               Fermer
             </button>

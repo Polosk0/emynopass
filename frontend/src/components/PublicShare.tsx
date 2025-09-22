@@ -13,7 +13,7 @@ import {
   Zap
 } from 'lucide-react';
 import PublicFilePreview from './PublicFilePreview';
-import DenseSpiderWebBackground from './DenseSpiderWebBackground';
+import CanvasParticleNetwork from './CanvasParticleNetwork';
 
 interface ShareData {
   token: string;
@@ -159,7 +159,7 @@ const PublicShare: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center relative overflow-hidden">
-        <DenseSpiderWebBackground />
+        <CanvasParticleNetwork />
         <div className="glass-card p-8 rounded-2xl shadow-2xl text-center fade-in">
           <div className="text-center">
             <Zap className="h-16 w-16 text-indigo-400 mx-auto mb-4 main-icon glow-effect" />
@@ -174,7 +174,7 @@ const PublicShare: React.FC = () => {
   if (error && !shareData) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4 relative overflow-hidden">
-        <DenseSpiderWebBackground />
+        <CanvasParticleNetwork />
         <div className="max-w-md w-full glass-card rounded-2xl shadow-2xl p-8 text-center fade-in">
           <div className="glass-card p-3 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center glow-border">
             <AlertTriangle className="h-8 w-8 text-red-400" />
@@ -200,7 +200,7 @@ const PublicShare: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-950 py-12 px-4 relative overflow-hidden">
-      <DenseSpiderWebBackground />
+      <CanvasParticleNetwork />
       
       <div className="max-w-2xl mx-auto relative z-10">
         {/* Header */}

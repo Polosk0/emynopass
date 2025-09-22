@@ -165,4 +165,257 @@ router.get('/:token', async (req, res): Promise<void> => {
   }
 });
 
+// Route pour obtenir les informations de prévisualisation d'un partage (sans authentification)
+router.get('/preview-info/:token', async (req, res): Promise<void> => {
+  try {
+    const { token } = req.params;
+    const password = req.headers['x-share-password'] as string;
+
+    const share = await database.findShareByToken(token);
+    if (!share) {
+      res.status(404).json({ error: 'Lien de partage non trouvé ou expiré' });
+      return;
+    }
+
+    // Vérifier l'expiration
+    if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
+      res.status(410).json({ error: 'Ce lien de partage a expiré' });
+      return;
+    }
+
+    // Vérifier la limite de téléchargements
+    if (share.maxDownloads && share.downloads >= share.maxDownloads) {
+      res.status(410).json({ error: 'Limite de téléchargements atteinte' });
+      return;
+    }
+
+    // Vérifier le mot de passe si nécessaire
+    if (share.password) {
+      if (!password) {
+        res.status(401).json({ error: 'Mot de passe requis' });
+        return;
+      }
+      
+      const isValidPassword = await bcrypt.compare(password, share.password);
+      if (!isValidPassword) {
+        res.status(401).json({ error: 'Mot de passe incorrect' });
+        return;
+      }
+    }
+
+    // Récupérer les infos du fichier
+    const file = await database.getFileById(share.fileId);
+    if (!file) {
+      res.status(404).json({ error: 'Fichier non trouvé' });
+      return;
+    }
+
+    // Vérifier que le fichier existe physiquement
+    const filePath = path.join(process.env.UPLOAD_DIR || './uploads', file.filename);
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'Fichier non trouvé sur le serveur' });
+      return;
+    }
+
+    // Déterminer le type de prévisualisation
+    const previewableTypes = [
+      'image/', 'text/', 'application/pdf', 'video/', 'audio/',
+      'application/json', 'application/xml', 'application/javascript'
+    ];
+    
+    const canPreview = previewableTypes.some(type => file.mimetype.startsWith(type));
+    
+    let previewType: 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'none' = 'none';
+    if (canPreview) {
+      if (file.mimetype.startsWith('image/')) previewType = 'image';
+      else if (file.mimetype.startsWith('video/')) previewType = 'video';
+      else if (file.mimetype.startsWith('audio/')) previewType = 'audio';
+      else if (file.mimetype === 'application/pdf') previewType = 'pdf';
+      else if (file.mimetype.startsWith('text/') || 
+               file.mimetype === 'application/json' ||
+               file.mimetype === 'application/xml' ||
+               file.mimetype === 'application/javascript') previewType = 'text';
+    }
+
+    res.json({
+      canPreview,
+      previewType,
+      mimetype: file.mimetype,
+      filename: file.originalName,
+      fileSize: file.size
+    });
+  } catch (error) {
+    console.error('Erreur prévisualisation partage:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour prévisualiser un fichier partagé (sans authentification)
+router.get('/preview/:token', async (req, res): Promise<void> => {
+  try {
+    const { token } = req.params;
+    const password = req.headers['x-share-password'] as string;
+
+    const share = await database.findShareByToken(token);
+    if (!share) {
+      res.status(404).json({ error: 'Lien de partage non trouvé ou expiré' });
+      return;
+    }
+
+    // Vérifier l'expiration
+    if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
+      res.status(410).json({ error: 'Ce lien de partage a expiré' });
+      return;
+    }
+
+    // Vérifier la limite de téléchargements
+    if (share.maxDownloads && share.downloads >= share.maxDownloads) {
+      res.status(410).json({ error: 'Limite de téléchargements atteinte' });
+      return;
+    }
+
+    // Vérifier le mot de passe si nécessaire
+    if (share.password) {
+      if (!password) {
+        res.status(401).json({ error: 'Mot de passe requis' });
+        return;
+      }
+      
+      const isValidPassword = await bcrypt.compare(password, share.password);
+      if (!isValidPassword) {
+        res.status(401).json({ error: 'Mot de passe incorrect' });
+        return;
+      }
+    }
+
+    // Récupérer les infos du fichier
+    const file = await database.getFileById(share.fileId);
+    if (!file) {
+      res.status(404).json({ error: 'Fichier non trouvé' });
+      return;
+    }
+
+    // Vérifier que le fichier existe physiquement
+    const filePath = path.join(process.env.UPLOAD_DIR || './uploads', file.filename);
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'Fichier non trouvé sur le serveur' });
+      return;
+    }
+
+    // Définir les headers appropriés
+    res.setHeader('Content-Type', file.mimetype);
+    res.setHeader('Content-Length', file.size);
+    res.setHeader('Content-Disposition', `inline; filename="${file.originalName}"`);
+
+    // Envoyer le fichier
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+    fileStream.on('error', (error) => {
+      console.error('Erreur lecture fichier:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Erreur de lecture du fichier' });
+      }
+    });
+
+  } catch (error) {
+    console.error('Erreur prévisualisation partage:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour télécharger un fichier partagé (sans authentification)
+router.post('/:token/download', async (req, res): Promise<void> => {
+  try {
+    const { token } = req.params;
+    const password = req.headers['x-share-password'] as string;
+
+    const share = await database.findShareByToken(token);
+    if (!share) {
+      res.status(404).json({ error: 'Lien de partage non trouvé ou expiré' });
+      return;
+    }
+
+    // Vérifier l'expiration
+    if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
+      res.status(410).json({ error: 'Ce lien de partage a expiré' });
+      return;
+    }
+
+    // Vérifier la limite de téléchargements
+    if (share.maxDownloads && share.downloads >= share.maxDownloads) {
+      res.status(410).json({ error: 'Limite de téléchargements atteinte' });
+      return;
+    }
+
+    // Vérifier le mot de passe si nécessaire
+    if (share.password) {
+      if (!password) {
+        res.status(401).json({ error: 'Mot de passe requis' });
+        return;
+      }
+      
+      const isValidPassword = await bcrypt.compare(password, share.password);
+      if (!isValidPassword) {
+        res.status(401).json({ error: 'Mot de passe incorrect' });
+        return;
+      }
+    }
+
+    // Récupérer les infos du fichier
+    const file = await database.getFileById(share.fileId);
+    if (!file) {
+      res.status(404).json({ error: 'Fichier non trouvé' });
+      return;
+    }
+
+    // Vérifier que le fichier existe physiquement
+    const filePath = path.join(process.env.UPLOAD_DIR || './uploads', file.filename);
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'Fichier non trouvé sur le serveur' });
+      return;
+    }
+
+    // Incrémenter le compteur de téléchargements
+    await database.incrementShareDownload(token);
+
+    // Télécharger le fichier
+    res.download(filePath, file.originalName);
+  } catch (error) {
+    console.error('Erreur téléchargement partage:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour supprimer un partage (authentification requise)
+router.delete('/:shareId', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { shareId } = req.params;
+    const userId = req.user!.id;
+
+    // Vérifier que le partage existe
+    const share = await database.getShareById(shareId);
+    if (!share) {
+      res.status(404).json({ error: 'Partage non trouvé' });
+      return;
+    }
+
+    // Vérifier que l'utilisateur est le propriétaire du partage ou admin
+    if (share.userId !== userId && req.user!.role !== 'ADMIN') {
+      res.status(403).json({ error: 'Accès non autorisé' });
+      return;
+    }
+
+    // Supprimer le partage
+    await database.deleteShare(shareId);
+
+    res.json({ 
+      message: 'Partage supprimé avec succès' 
+    });
+  } catch (error) {
+    console.error('Erreur suppression partage:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 export default router;

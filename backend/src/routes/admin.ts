@@ -80,6 +80,9 @@ router.get('/users', async (req: AuthRequest, res): Promise<void> => {
       name: user.name,
       role: user.role,
       isActive: user.isActive,
+      isDemo: user.isDemo,
+      isTemporaryDemo: user.isTemporaryDemo,
+      demoExpiresAt: user.demoExpiresAt,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt
     }));
@@ -123,6 +126,10 @@ router.delete('/files/:fileId', async (req: AuthRequest, res): Promise<void> => 
       return;
     }
 
+    // Supprimer les partages liés à ce fichier
+    const deletedShares = await database.deleteSharesByFileId(fileId);
+    console.log(`🗑️ Supprimé ${deletedShares} partage(s) lié(s) au fichier ${fileId}`);
+
     // Supprimer de la base de données
     await database.deleteFile(fileId);
 
@@ -131,7 +138,10 @@ router.delete('/files/:fileId', async (req: AuthRequest, res): Promise<void> => 
       fs.unlinkSync(file.path);
     }
 
-    res.json({ message: 'Fichier supprimé avec succès' });
+    res.json({ 
+      message: 'Fichier supprimé avec succès',
+      deletedShares: deletedShares
+    });
   } catch (error) {
     console.error('Erreur suppression admin:', error);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -193,6 +203,12 @@ router.post('/cleanup/expired', async (req: AuthRequest, res): Promise<void> => 
 
     for (const file of expiredFiles) {
       try {
+        // Supprimer les partages liés à ce fichier
+        const deletedShares = await database.deleteSharesByFileId(file.id);
+        if (deletedShares > 0) {
+          console.log(`🗑️ Supprimé ${deletedShares} partage(s) lié(s) au fichier expiré ${file.id}`);
+        }
+
         // Supprimer de la base de données
         await database.deleteFile(file.id);
         
@@ -219,6 +235,55 @@ router.post('/cleanup/expired', async (req: AuthRequest, res): Promise<void> => 
     });
   } catch (error) {
     console.error('Erreur nettoyage fichiers expirés:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour nettoyer les partages orphelins
+router.post('/cleanup/orphaned-shares', async (req: AuthRequest, res): Promise<void> => {
+  try {
+    // Récupérer les partages orphelins avant suppression
+    const orphanedShares = await database.getOrphanedShares();
+    
+    // Supprimer les partages orphelins
+    const deletedCount = await database.deleteOrphanedShares();
+    
+    console.log(`🧹 Nettoyage des partages orphelins: ${deletedCount} partage(s) supprimé(s)`);
+    
+    res.json({
+      message: 'Nettoyage des partages orphelins terminé',
+      deletedShares: deletedCount,
+      orphanedShares: orphanedShares.map(share => ({
+        id: share.id,
+        token: share.token,
+        title: share.title,
+        fileId: share.fileId
+      }))
+    });
+  } catch (error) {
+    console.error('Erreur nettoyage partages orphelins:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour nettoyer les comptes démo expirés
+router.post('/cleanup/expired-demo', async (req: AuthRequest, res): Promise<void> => {
+  try {
+    // Récupérer les comptes démo expirés avant suppression
+    const expiredDemoUsers = await database.getExpiredDemoUsers();
+    
+    // Supprimer les comptes démo expirés
+    const deletedCount = await database.deleteExpiredDemoUsers();
+    
+    console.log(`🧹 Nettoyage des comptes démo expirés: ${deletedCount} compte(s) supprimé(s)`);
+    
+    res.json({
+      success: true,
+      deletedCount: deletedCount,
+      message: `${deletedCount} compte(s) démo expiré(s) supprimé(s)`
+    });
+  } catch (error) {
+    console.error('Erreur lors du nettoyage des comptes démo expirés:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
@@ -287,7 +352,8 @@ router.post('/users', async (req: AuthRequest, res): Promise<void> => {
       password: hashedPassword,
       name,
       role: role as 'USER' | 'ADMIN',
-      isActive: true
+      isActive: true,
+      isDemo: false
     });
 
     res.status(201).json({
@@ -439,6 +505,67 @@ async function getDiskInfo(): Promise<{ total: number; free: number; used: numbe
   };
 }
 
+// Route publique pour obtenir les informations de stockage (sans authentification)
+router.get('/public/storage', async (req, res): Promise<void> => {
+  try {
+    const uploadDir = path.join(process.cwd(), 'uploads');
+    const logsDir = path.join(process.cwd(), 'logs');
+    const dbPath = path.join(process.cwd(), 'data', 'emynopass.db');
+    
+    // Calculer les tailles des différents composants
+    const uploadStats = await getDirectorySize(uploadDir);
+    const logsStats = await getDirectorySize(logsDir);
+    
+    // Taille de la base de données
+    let dbSize = 0;
+    if (fs.existsSync(dbPath)) {
+      const dbStats = fs.statSync(dbPath);
+      dbSize = dbStats.size;
+    }
+    
+    // Informations du disque
+    const diskInfo = await getDiskInfo();
+    
+    // Calculer l'espace disponible pour Emynopass
+    const emynopassTotal = uploadStats.size + dbSize + logsStats.size;
+    const availableForEmynopass = diskInfo.free;
+    const emynopassPercentage = diskInfo.total > 0 ? (emynopassTotal / diskInfo.total) * 100 : 0;
+    
+    res.json({
+      disk: {
+        total: diskInfo.total,
+        free: diskInfo.free,
+        used: diskInfo.used,
+        totalFormatted: formatBytes(diskInfo.total),
+        freeFormatted: formatBytes(diskInfo.free),
+        usedFormatted: formatBytes(diskInfo.used)
+      },
+      emynopass: {
+        total: emynopassTotal,
+        totalFormatted: formatBytes(emynopassTotal),
+        breakdown: {
+          files: uploadStats.size,
+          filesFormatted: formatBytes(uploadStats.size),
+          database: dbSize,
+          databaseFormatted: formatBytes(dbSize),
+          logs: logsStats.size,
+          logsFormatted: formatBytes(logsStats.size)
+        },
+        fileCount: uploadStats.fileCount,
+        percentage: emynopassPercentage
+      },
+      available: {
+        total: availableForEmynopass,
+        totalFormatted: formatBytes(availableForEmynopass),
+        percentage: diskInfo.total > 0 ? (availableForEmynopass / diskInfo.total) * 100 : 0
+      }
+    });
+  } catch (error) {
+    console.error('Erreur info stockage:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Route pour obtenir les informations de stockage
 router.get('/storage', async (req: AuthRequest, res): Promise<void> => {
   try {
@@ -497,6 +624,67 @@ router.get('/storage', async (req: AuthRequest, res): Promise<void> => {
   } catch (error) {
     console.error('Erreur info stockage:', error);
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour supprimer tous les fichiers
+router.delete('/delete-all-files', async (req: AuthRequest, res): Promise<void> => {
+  try {
+    console.log('🗑️ Suppression de tous les fichiers demandée par:', req.user?.email);
+    
+    // Récupérer tous les fichiers
+    const allFiles = await database.getAllFiles();
+    
+    if (allFiles.length === 0) {
+      res.json({ 
+        success: true, 
+        message: 'Aucun fichier à supprimer',
+        deletedCount: 0 
+      });
+      return;
+    }
+
+    let deletedCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+
+    // Supprimer chaque fichier
+    for (const file of allFiles) {
+      try {
+        // Supprimer les partages associés
+        await database.deleteSharesByFileId(file.id);
+        
+        // Supprimer le fichier physique
+        const filePath = path.join(__dirname, '..', '..', 'uploads', file.filename);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+        
+        // Supprimer l'entrée de la base de données
+        await database.deleteFile(file.id);
+        
+        deletedCount++;
+        console.log(`✅ Fichier supprimé: ${file.originalName}`);
+      } catch (error) {
+        errorCount++;
+        const errorMsg = `Erreur lors de la suppression de ${file.originalName}: ${error}`;
+        errors.push(errorMsg);
+        console.error(`❌ ${errorMsg}`);
+      }
+    }
+
+    console.log(`🗑️ Suppression terminée: ${deletedCount} fichier(s) supprimé(s), ${errorCount} erreur(s)`);
+
+    res.json({
+      success: true,
+      message: `${deletedCount} fichier(s) supprimé(s) avec succès`,
+      deletedCount,
+      errorCount,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (error) {
+    console.error('Erreur lors de la suppression de tous les fichiers:', error);
+    res.status(500).json({ error: 'Erreur serveur lors de la suppression' });
   }
 });
 

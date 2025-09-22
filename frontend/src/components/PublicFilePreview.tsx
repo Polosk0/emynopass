@@ -11,7 +11,15 @@ import {
   Maximize2,
   Minimize2
 } from 'lucide-react';
-import DenseSpiderWebBackground from './DenseSpiderWebBackground';
+import CanvasParticleNetwork from './CanvasParticleNetwork';
+
+interface PreviewInfo {
+  canPreview: boolean;
+  previewType: 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'none';
+  mimetype: string;
+  filename: string;
+  fileSize: number;
+}
 
 interface PublicFilePreviewProps {
   shareToken: string;
@@ -34,15 +42,15 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
   password,
   hasPassword
 }) => {
+  const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string>('');
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [canPreview, setCanPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string>('');
 
   useEffect(() => {
-    checkPreviewability();
+    fetchPreviewInfo();
     
     // Cleanup function pour libérer les URLs blob
     return () => {
@@ -50,9 +58,58 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
         URL.revokeObjectURL(previewUrl);
       }
     };
-  }, [mimetype, previewUrl]);
+  }, [shareToken, password, hasPassword]);
 
-  const fetchPreviewBlob = async (url: string): Promise<string> => {
+  const fetchPreviewInfo = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('Tentative de prévisualisation du partage:', shareToken);
+
+      const headers: HeadersInit = {};
+      
+      // Ajouter le mot de passe si nécessaire
+      if (hasPassword && password) {
+        headers['X-Share-Password'] = password;
+      }
+
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/share/preview-info/${shareToken}`, { headers });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Erreur inconnue' }));
+        throw new Error(errorData.error || `Erreur ${response.status}: Impossible de récupérer les informations de prévisualisation`);
+      }
+
+      const info = await response.json();
+      console.log('Informations de prévisualisation:', info);
+      setPreviewInfo(info);
+
+      // Pour les fichiers texte, récupérer le contenu
+      if (info.previewType === 'text' && info.canPreview) {
+        await fetchTextContent();
+      }
+
+      // Pour les autres types, charger le blob
+      if (info.canPreview && info.previewType !== 'text') {
+        try {
+          const blobUrl = await fetchPreviewBlob();
+          setPreviewUrl(blobUrl);
+        } catch (blobError) {
+          console.error('Erreur chargement blob:', blobError);
+          setError('Impossible de charger le fichier');
+        }
+      }
+    } catch (err) {
+      console.error('Erreur prévisualisation:', err);
+      setError(err instanceof Error ? err.message : 'Erreur de chargement');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPreviewBlob = async (): Promise<string> => {
     try {
       const headers: HeadersInit = {};
       
@@ -61,11 +118,11 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
         headers['X-Share-Password'] = password;
       }
 
-      const response = await fetch(url, { headers });
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/share/preview/${shareToken}`, { headers });
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Erreur inconnue');
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const blob = await response.blob();
@@ -75,37 +132,7 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
     }
   };
 
-  const checkPreviewability = async () => {
-    const previewableTypes = [
-      'image/', 'text/', 'application/pdf', 'video/', 'audio/',
-      'application/json', 'application/xml', 'application/javascript'
-    ];
-    
-    const isPreviewable = previewableTypes.some(type => mimetype.startsWith(type));
-    setCanPreview(isPreviewable);
-    setLoading(false);
-
-    if (isPreviewable) {
-      try {
-        // Pour les fichiers texte, récupérer le contenu
-        if (mimetype.startsWith('text/') || 
-            mimetype === 'application/json' ||
-            mimetype === 'application/xml' ||
-            mimetype === 'application/javascript') {
-          await fetchTextContent();
-        } else {
-          // Pour les autres types, charger le blob
-          const previewUrl = `http://localhost:3001/api/share/preview/${shareToken}`;
-          const blobUrl = await fetchPreviewBlob(previewUrl);
-          setPreviewUrl(blobUrl);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Erreur de chargement');
-      }
-    }
-  };
-
-  const fetchTextContent = async () => {
+  const fetchTextContent = async (): Promise<void> => {
     try {
       const headers: HeadersInit = {};
       
@@ -114,16 +141,18 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
         headers['X-Share-Password'] = password;
       }
 
-      const response = await fetch(`http://localhost:3001/api/share/preview/${shareToken}`, { headers });
-      
-      if (response.ok) {
-        const content = await response.text();
-        setTextContent(content);
-      } else {
-        setError('Impossible de charger le contenu du fichier');
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/share/preview/${shareToken}`, { headers });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+
+      const text = await response.text();
+      setTextContent(text);
     } catch (err) {
-      setError('Erreur lors du chargement du contenu');
+      console.error('Erreur chargement texte:', err);
+      setError('Impossible de charger le contenu texte');
     }
   };
 
@@ -144,31 +173,19 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
     return <FileIcon className="h-6 w-6" />;
   };
 
-  const getPreviewType = (mimetype: string): string => {
-    if (mimetype.startsWith('image/')) return 'image';
-    if (mimetype.startsWith('video/')) return 'video';
-    if (mimetype.startsWith('audio/')) return 'audio';
-    if (mimetype === 'application/pdf') return 'pdf';
-    if (mimetype.startsWith('text/') || 
-        mimetype === 'application/json' ||
-        mimetype === 'application/xml' ||
-        mimetype === 'application/javascript') return 'text';
-    return 'none';
-  };
-
   const renderPreview = () => {
-    if (!canPreview) {
+    if (!previewInfo || !previewInfo.canPreview) {
       return (
         <div className="flex flex-col items-center justify-center h-64 text-gray-500">
           <AlertCircle className="h-16 w-16 mb-4" />
           <p className="text-lg font-medium">Prévisualisation non disponible</p>
           <p className="text-sm">Ce type de fichier ne peut pas être prévisualisé</p>
-          <p className="text-xs mt-2 text-gray-400">{mimetype}</p>
+          <p className="text-xs mt-2 text-gray-400">{previewInfo?.mimetype || mimetype}</p>
         </div>
       );
     }
 
-    const previewType = getPreviewType(mimetype);
+    const previewType = previewInfo.previewType;
 
     switch (previewType) {
       case 'image':
@@ -245,11 +262,11 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-gray-950 bg-opacity-90 flex items-center justify-center z-50 relative overflow-hidden">
-        <DenseSpiderWebBackground />
-        <div className="glass-card rounded-lg p-8 max-w-4xl max-h-screen overflow-auto relative z-10">
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-400"></div>
+      <div className="fixed inset-0 bg-gray-950 bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="glass-card rounded-lg p-8 max-w-md w-full mx-4">
+          <div className="flex items-center justify-center h-32">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-400"></div>
+            <span className="ml-3 text-white">Chargement...</span>
           </div>
         </div>
       </div>
@@ -257,9 +274,8 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
   }
 
   return (
-    <div className={`fixed inset-0 bg-gray-950 bg-opacity-90 flex items-center justify-center z-50 p-4 relative overflow-hidden ${isFullscreen ? 'p-0' : ''}`}>
-      <DenseSpiderWebBackground />
-      <div className={`glass-card rounded-lg shadow-xl max-w-6xl w-full max-h-screen overflow-auto relative z-10 ${isFullscreen ? 'rounded-none max-w-none h-full' : ''}`}>
+    <div className="fixed inset-0 bg-gray-950 bg-opacity-80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className={`glass-card rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-auto ${isFullscreen ? 'max-w-none max-h-none h-full w-full rounded-none' : ''}`}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-700 bg-gray-800/50 rounded-t-lg">
           <div className="flex items-center space-x-3">
@@ -275,7 +291,7 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
           </div>
           
           <div className="flex items-center space-x-2">
-            {canPreview && (
+            {previewInfo && previewInfo.canPreview && (
               <button
                 onClick={() => setIsFullscreen(!isFullscreen)}
                 className="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
@@ -306,9 +322,9 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-6 bg-gray-900/30">
           {error ? (
-            <div className="flex flex-col items-center justify-center h-64 text-red-500">
+            <div className="flex flex-col items-center justify-center h-64 text-red-400">
               <AlertCircle className="h-16 w-16 mb-4" />
               <p className="text-lg font-medium">Erreur de prévisualisation</p>
               <p className="text-sm">{error}</p>
@@ -325,7 +341,7 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
               {onDownload && (
                 <button
                   onClick={onDownload}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center space-x-2"
+                  className="action-button px-4 py-2 flex items-center space-x-2"
                 >
                   <Download className="h-4 w-4" />
                   <span>Télécharger</span>

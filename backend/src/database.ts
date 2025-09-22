@@ -11,6 +11,9 @@ export interface User {
   name: string;
   role: 'USER' | 'ADMIN';
   isActive: boolean;
+  isDemo: boolean;
+  isTemporaryDemo?: boolean;
+  demoExpiresAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -93,6 +96,9 @@ class Database {
             name TEXT,
             role TEXT DEFAULT 'USER',
             isActive INTEGER DEFAULT 1,
+            isDemo INTEGER DEFAULT 0,
+            isTemporaryDemo INTEGER DEFAULT 0,
+            demoExpiresAt TEXT,
             createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
             updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
           )
@@ -187,6 +193,7 @@ class Database {
           name: 'Polosko',
           role: 'ADMIN',
           isActive: true,
+          isDemo: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -201,21 +208,22 @@ class Database {
           name: 'Utilisateur Démo',
           role: 'USER',
           isActive: true,
+          isDemo: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
 
         // Insérer le compte admin
         this.db.run(`
-          INSERT OR IGNORE INTO users (id, email, password, name, role, isActive, createdAt, updatedAt)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `, [admin.id, admin.email, admin.password, admin.name, admin.role, admin.isActive ? 1 : 0, admin.createdAt, admin.updatedAt]);
+          INSERT OR IGNORE INTO users (id, email, password, name, role, isActive, isDemo, createdAt, updatedAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [admin.id, admin.email, admin.password, admin.name, admin.role, admin.isActive ? 1 : 0, admin.isDemo ? 1 : 0, admin.createdAt, admin.updatedAt]);
 
         // Insérer le compte démo
         this.db.run(`
-          INSERT OR IGNORE INTO users (id, email, password, name, role, isActive, createdAt, updatedAt)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `, [demoUser.id, demoUser.email, demoUser.password, demoUser.name, demoUser.role, demoUser.isActive ? 1 : 0, demoUser.createdAt, demoUser.updatedAt], (err) => {
+          INSERT OR IGNORE INTO users (id, email, password, name, role, isActive, isDemo, createdAt, updatedAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [demoUser.id, demoUser.email, demoUser.password, demoUser.name, demoUser.role, demoUser.isActive ? 1 : 0, demoUser.isDemo ? 1 : 0, demoUser.createdAt, demoUser.updatedAt], (err) => {
           if (err) {
             reject(err);
           } else {
@@ -244,7 +252,9 @@ class Database {
             if (row) {
               resolve({
                 ...row,
-                isActive: row.isActive === 1
+                isActive: row.isActive === 1,
+                isDemo: row.isDemo === 1,
+                isTemporaryDemo: row.isTemporaryDemo === 1
               });
             } else {
               resolve(null);
@@ -258,14 +268,16 @@ class Database {
   async getAllUsers(): Promise<User[]> {
     return new Promise((resolve, reject) => {
       this.db.all(
-        'SELECT id, email, name, role, isActive, createdAt, updatedAt FROM users ORDER BY createdAt DESC',
+        'SELECT id, email, name, role, isActive, isDemo, isTemporaryDemo, demoExpiresAt, createdAt, updatedAt FROM users ORDER BY createdAt DESC',
         (err, rows: any[]) => {
           if (err) {
             reject(err);
           } else {
             const users = rows.map(row => ({
               ...row,
-              isActive: row.isActive === 1
+              isActive: row.isActive === 1,
+              isDemo: row.isDemo === 1,
+              isTemporaryDemo: row.isTemporaryDemo === 1
             }));
             resolve(users);
           }
@@ -295,9 +307,9 @@ class Database {
       const now = new Date().toISOString();
       
       this.db.run(`
-        INSERT INTO users (id, email, password, name, role, isActive, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [id, user.email, user.password, user.name, user.role, user.isActive ? 1 : 0, now, now], function(err) {
+        INSERT INTO users (id, email, password, name, role, isActive, isDemo, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [id, user.email, user.password, user.name, user.role, user.isActive ? 1 : 0, user.isDemo ? 1 : 0, now, now], function(err) {
         if (err) {
           reject(err);
         } else {
@@ -410,7 +422,9 @@ class Database {
             if (row) {
               resolve({
                 ...row,
-                isActive: row.isActive === 1
+                isActive: row.isActive === 1,
+                isDemo: row.isDemo === 1,
+                isTemporaryDemo: row.isTemporaryDemo === 1
               });
             } else {
               resolve(null);
@@ -658,7 +672,9 @@ class Database {
             if (row) {
               resolve({
                 ...row,
-                isActive: row.isActive === 1
+                isActive: row.isActive === 1,
+                isDemo: row.isDemo === 1,
+                isTemporaryDemo: row.isTemporaryDemo === 1
               });
             } else {
               resolve(null);
@@ -760,6 +776,27 @@ class Database {
     });
   }
 
+  async getShareById(shareId: string): Promise<Share | null> {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        'SELECT * FROM shares WHERE id = ?',
+        [shareId],
+        (err, row: any) => {
+          if (err) {
+            reject(err);
+          } else if (row) {
+            resolve({
+              ...row,
+              isActive: row.isActive === 1
+            });
+          } else {
+            resolve(null);
+          }
+        }
+      );
+    });
+  }
+
   async deleteShare(shareId: string): Promise<boolean> {
     return new Promise((resolve, reject) => {
       this.db.run(
@@ -770,6 +807,154 @@ class Database {
             reject(err);
           } else {
             resolve(this.changes > 0);
+          }
+        }
+      );
+    });
+  }
+
+  async deleteSharesByFileId(fileId: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        'DELETE FROM shares WHERE fileId = ?',
+        [fileId],
+        function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.changes);
+          }
+        }
+      );
+    });
+  }
+
+  async getOrphanedShares(): Promise<Share[]> {
+    return new Promise((resolve, reject) => {
+      this.db.all(
+        `SELECT s.* FROM shares s 
+         LEFT JOIN files f ON s.fileId = f.id 
+         WHERE f.id IS NULL`,
+        [],
+        (err, rows: any[]) => {
+          if (err) {
+            reject(err);
+          } else {
+            const shares = rows.map(row => ({
+              ...row,
+              isActive: row.isActive === 1
+            }));
+            resolve(shares);
+          }
+        }
+      );
+    });
+  }
+
+  async deleteOrphanedShares(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        `DELETE FROM shares WHERE fileId NOT IN (SELECT id FROM files)`,
+        [],
+        function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.changes);
+          }
+        }
+      );
+    });
+  }
+
+  // Méthodes pour les comptes démo temporaires
+  async createTemporaryDemoUser(): Promise<User> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const id = uuidv4();
+        const email = `demo-${id.substring(0, 8)}@emynopass.dev`;
+        const password = await bcrypt.hash('demo2024', 10);
+        const now = new Date().toISOString();
+        const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes
+
+        this.db.run(
+          `INSERT INTO users (id, email, password, name, role, isActive, isDemo, isTemporaryDemo, demoExpiresAt, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [id, email, password, 'Utilisateur Démo Temporaire', 'USER', 1, 1, 1, expiresAt, now, now],
+          function(err) {
+            if (err) {
+              reject(err);
+            } else {
+              resolve({
+                id,
+                email,
+                password,
+                name: 'Utilisateur Démo Temporaire',
+                role: 'USER',
+                isActive: true,
+                isDemo: true,
+                isTemporaryDemo: true,
+                demoExpiresAt: expiresAt,
+                createdAt: now,
+                updatedAt: now
+              });
+            }
+          }
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async getExpiredDemoUsers(): Promise<User[]> {
+    return new Promise((resolve, reject) => {
+      this.db.all(
+        `SELECT * FROM users WHERE isTemporaryDemo = 1 AND demoExpiresAt < ?`,
+        [new Date().toISOString()],
+        (err, rows: any[]) => {
+          if (err) {
+            reject(err);
+          } else {
+            const users = rows.map(row => ({
+              ...row,
+              isActive: row.isActive === 1,
+              isDemo: row.isDemo === 1,
+              isTemporaryDemo: row.isTemporaryDemo === 1
+            }));
+            resolve(users);
+          }
+        }
+      );
+    });
+  }
+
+  async deleteExpiredDemoUsers(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        `DELETE FROM users WHERE isTemporaryDemo = 1 AND demoExpiresAt < ?`,
+        [new Date().toISOString()],
+        function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(this.changes);
+          }
+        }
+      );
+    });
+  }
+
+  async getUserStorageUsed(userId: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        'SELECT COALESCE(SUM(size), 0) as totalSize FROM files WHERE userId = ?',
+        [userId],
+        (err, row: any) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(row?.totalSize || 0);
           }
         }
       );

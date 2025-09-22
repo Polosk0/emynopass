@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { UploadCloud, FileText, XCircle, Trash2, Loader2, Clock, Share2, Eye } from 'lucide-react';
+import { UploadCloud, FileText, XCircle, Trash2, Loader2, Clock, Share2, Eye, HardDrive } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import ShareManager from './ShareManager';
 import FilePreview from './FilePreview';
@@ -21,6 +21,21 @@ interface FileUploadProps {
   onUploadComplete: (files: UploadedFile[]) => void;
 }
 
+interface StorageInfo {
+  used: number;
+  usedFormatted: string;
+  max: number;
+  maxFormatted: string;
+  remaining: number;
+  remainingFormatted: string;
+  percentage: number;
+  maxFileSize: number;
+  maxFileSizeFormatted: string;
+  isDemo: boolean;
+  isAdmin: boolean;
+  maxFileCount: number;
+}
+
 const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
   const { token } = useAuthStore();
   const [currentTab, setCurrentTab] = useState<'upload' | 'shares'>('upload');
@@ -31,6 +46,15 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<{ id: string; name: string } | null>(null);
+  const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
+  const [uploadStats, setUploadStats] = useState<{
+    currentFile: string;
+    fileSize: string;
+    speed: string;
+    remainingTime: string;
+    progress: number;
+    filesInQueue: number;
+  } | null>(null);
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
@@ -57,19 +81,96 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
     }
   }, [API_BASE_URL, token]);
 
+  const fetchStorageInfo = useCallback(async () => {
+    if (!token) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/upload/storage-info`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setStorageInfo(data);
+      }
+    } catch (err) {
+      console.error('Erreur lors de la récupération des infos de stockage:', err);
+    }
+  }, [API_BASE_URL, token]);
+
   useEffect(() => {
     fetchUploadedFiles();
-  }, [fetchUploadedFiles]);
+    fetchStorageInfo();
+  }, [fetchUploadedFiles, fetchStorageInfo]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    // Validation côté client
-    const maxFileSize = 100 * 1024 * 1024; // 100MB
+    // Debug: afficher les informations de stockage
+    console.log('=== DEBUG UPLOAD ===');
+    console.log('Storage info:', storageInfo);
+    console.log('Is admin:', storageInfo?.isAdmin);
+    console.log('Is admin type:', typeof storageInfo?.isAdmin);
+    console.log('Max file size:', storageInfo?.maxFileSize);
+    console.log('Max file size type:', typeof storageInfo?.maxFileSize);
+    console.log('Max file size formatted:', storageInfo?.maxFileSizeFormatted);
+    console.log('Accepted files:', acceptedFiles.map(f => ({ name: f.name, size: f.size, sizeFormatted: (f.size / 1024 / 1024 / 1024).toFixed(2) + ' GB' })));
+    
+    // Les admins n'ont aucune limite côté client
+    if (storageInfo?.isAdmin === true) {
+      console.log('✅ Admin detected, bypassing file size validation');
+      setFilesToUpload(prev => [...prev, ...acceptedFiles]);
+      setError(null);
+      return;
+    }
+    
+    // Vérification supplémentaire : si maxFileSize est -1, c'est illimité
+    if (storageInfo?.maxFileSize === -1) {
+      console.log('✅ Unlimited file size detected, bypassing validation');
+      setFilesToUpload(prev => [...prev, ...acceptedFiles]);
+      setError(null);
+      return;
+    }
+    
+    console.log('❌ Validation will be applied');
+    
+    // Validation côté client pour utilisateurs normaux et démo
+    const maxFileSize = storageInfo?.maxFileSize === -1 ? Number.MAX_SAFE_INTEGER : (storageInfo?.maxFileSize || 10 * 1024 * 1024 * 1024);
+    const maxFiles = storageInfo?.maxFileCount === -1 ? Number.MAX_SAFE_INTEGER : (storageInfo?.maxFileCount || 10);
+    const maxFileSizeFormatted = storageInfo?.maxFileSizeFormatted || '10 GB';
+    
+    console.log('Validation values:', { maxFileSize, maxFiles, maxFileSizeFormatted });
+    console.log('Max file size in GB:', (maxFileSize / 1024 / 1024 / 1024).toFixed(2));
+    
+    // Vérifier le nombre de fichiers
+    if (acceptedFiles.length > maxFiles) {
+      setError(`❌ Trop de fichiers sélectionnés. Maximum ${maxFiles} fichier(s) par upload.`);
+      return;
+    }
+    
     const oversizedFiles = acceptedFiles.filter(file => file.size > maxFileSize);
     const validFiles = acceptedFiles.filter(file => file.size <= maxFileSize);
     
+    console.log('File validation results:', {
+      totalFiles: acceptedFiles.length,
+      oversizedFiles: oversizedFiles.length,
+      validFiles: validFiles.length,
+      maxFileSize,
+      maxFileSizeGB: (maxFileSize / 1024 / 1024 / 1024).toFixed(2)
+    });
+    
     if (oversizedFiles.length > 0) {
+      console.log('❌ Oversized files detected:', oversizedFiles.map(f => ({ 
+        name: f.name, 
+        size: f.size, 
+        sizeGB: (f.size / 1024 / 1024 / 1024).toFixed(2),
+        maxAllowed: maxFileSize,
+        maxAllowedGB: (maxFileSize / 1024 / 1024 / 1024).toFixed(2)
+      })));
+      
       const fileNames = oversizedFiles.map(f => f.name).join(', ');
-      setError(`❌ Fichier(s) trop volumineux : ${fileNames}\n\n🔍 Détails :\n${oversizedFiles.map(f => `• ${f.name}: ${formatFileSize(f.size)} (max: 100 MB)`).join('\n')}\n\n💡 Conseils :\n• Compressez vos fichiers\n• Utilisez un format plus compact\n• Divisez en plusieurs parties si nécessaire`);
+      setError(`❌ Fichier(s) trop volumineux : ${fileNames}\n\n🔍 Détails :\n${oversizedFiles.map(f => `• ${f.name}: ${formatFileSize(f.size)} (max: ${maxFileSizeFormatted})`).join('\n')}\n\n💡 Conseils :\n• Compressez vos fichiers\n• Utilisez un format plus compact\n• Divisez en plusieurs parties si nécessaire`);
     }
     
     if (validFiles.length > 0) {
@@ -109,15 +210,59 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       formData.append('files', file);
     });
 
+    // Initialiser les statistiques d'upload
+    const totalFiles = filesToUpload.length;
+    const currentFile = filesToUpload[0];
+    const totalSize = filesToUpload.reduce((sum, file) => sum + file.size, 0);
+    
+    setUploadStats({
+      currentFile: currentFile.name,
+      fileSize: formatFileSize(currentFile.size),
+      speed: '0 MB/s',
+      remainingTime: 'Calcul...',
+      progress: 0,
+      filesInQueue: totalFiles - 1
+    });
+
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API_BASE_URL}/api/upload/files`, true);
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
+      let startTime = Date.now();
+      let lastLoaded = 0;
+      let lastTime = startTime;
+
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
           const percent = Math.round((event.loaded / event.total) * 100);
           setUploadProgress(percent);
+          
+          // Calculer la vitesse et le temps restant
+          const currentTime = Date.now();
+          const timeDiff = (currentTime - lastTime) / 1000; // en secondes
+          const loadedDiff = event.loaded - lastLoaded;
+          
+          if (timeDiff > 0.5) { // Mettre à jour toutes les 500ms
+            const speed = loadedDiff / timeDiff; // bytes par seconde
+            const speedMBps = (speed / (1024 * 1024)).toFixed(1);
+            
+            const remainingBytes = event.total - event.loaded;
+            const remainingTimeSeconds = remainingBytes / speed;
+            const remainingMinutes = Math.floor(remainingTimeSeconds / 60);
+            const remainingSeconds = Math.floor(remainingTimeSeconds % 60);
+            const remainingTimeFormatted = `${remainingMinutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+            
+            setUploadStats(prev => prev ? {
+              ...prev,
+              speed: `${speedMBps} MB/s`,
+              remainingTime: remainingTimeFormatted,
+              progress: percent
+            } : null);
+            
+            lastLoaded = event.loaded;
+            lastTime = currentTime;
+          }
         }
       };
 
@@ -126,8 +271,10 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
           const result = JSON.parse(xhr.responseText);
           setSuccessMessage(result.message || 'Fichiers uploadés avec succès !');
           setFilesToUpload([]);
+          setUploadStats(null);
           onUploadComplete(result.files);
           await fetchUploadedFiles(); // Recharger la liste des fichiers
+          await fetchStorageInfo(); // Recharger les infos de stockage
         } else {
           try {
             const errorResult = JSON.parse(xhr.responseText);
@@ -135,7 +282,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
             
             // Ajouter des détails spécifiques selon le code d'erreur
             if (xhr.status === 413 || errorResult.code === 'LIMIT_FILE_SIZE') {
-              errorMessage = `❌ Fichier trop volumineux !\n\n${errorResult.error || 'La taille du fichier dépasse la limite autorisée de 100 MB.'}\n\n💡 Conseils :\n• Compressez votre fichier\n• Divisez les gros fichiers en plusieurs parties\n• Utilisez un format plus compact`;
+              errorMessage = `❌ Fichier trop volumineux !\n\n${errorResult.error || 'La taille du fichier dépasse la limite autorisée de 10 GB.'}\n\n💡 Conseils :\n• Compressez votre fichier\n• Divisez les gros fichiers en plusieurs parties\n• Utilisez un format plus compact`;
             } else if (errorResult.code === 'LIMIT_FILE_COUNT') {
               errorMessage = `❌ Trop de fichiers !\n\n${errorResult.error}\n\n💡 Uploadez maximum 10 fichiers à la fois.`;
             } else if (errorResult.details) {
@@ -149,12 +296,14 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
         }
         setUploading(false);
         setUploadProgress(0);
+        setUploadStats(null);
       };
 
       xhr.onerror = () => {
         setError('Erreur réseau ou serveur inaccessible.');
         setUploading(false);
         setUploadProgress(0);
+        setUploadStats(null);
       };
 
       xhr.send(formData);
@@ -164,6 +313,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       setError('Une erreur inattendue est survenue.');
       setUploading(false);
       setUploadProgress(0);
+      setUploadStats(null);
     }
   };
 
@@ -194,6 +344,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       
       setSuccessMessage(`Fichier "${file?.originalName}" supprimé avec succès.`);
       await fetchUploadedFiles();
+      await fetchStorageInfo();
     } catch (err) {
       console.error('Erreur lors de la suppression du fichier:', err);
       setError(`Impossible de supprimer le fichier "${file?.originalName}".`);
@@ -263,6 +414,72 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
           </button>
         </div>
       </div>
+
+        {/* Informations de stockage */}
+        {storageInfo && (
+          <div className="mb-6 glass-card p-4 rounded-lg border border-indigo-500/30">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-2">
+                <HardDrive className="h-5 w-5 text-indigo-400" />
+                <span className="text-sm font-semibold text-indigo-300">
+                  {storageInfo.isAdmin ? 'Stockage Admin' : storageInfo.isDemo ? 'Stockage Démo' : 'Votre stockage'}
+                </span>
+                {storageInfo.isAdmin && (
+                  <span className="px-2 py-1 bg-purple-500/20 text-purple-400 text-xs rounded-full border border-purple-500/30">
+                    ADMIN
+                  </span>
+                )}
+                {storageInfo.isDemo && (
+                  <span className="px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs rounded-full border border-yellow-500/30">
+                    COMPTE DÉMO
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-gray-400">
+                Limite par fichier: {storageInfo.maxFileSizeFormatted}
+              </div>
+            </div>
+            <div className="space-y-2">
+              {!storageInfo.isAdmin && (
+                <>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-gray-400">Utilisé</span>
+                    <span className="text-sm font-medium text-white">
+                      {storageInfo.usedFormatted} / {storageInfo.maxFormatted}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-700 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        storageInfo.percentage > 80
+                          ? 'bg-gradient-to-r from-red-500 to-red-600'
+                          : storageInfo.percentage > 60
+                          ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                          : 'bg-gradient-to-r from-indigo-500 to-purple-500'
+                      }`}
+                      style={{ width: `${Math.min(storageInfo.percentage, 100)}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-400">
+                      {storageInfo.percentage.toFixed(1)}% utilisé
+                    </span>
+                    <span className="text-green-400">
+                      {storageInfo.remainingFormatted} restant
+                    </span>
+                  </div>
+                </>
+              )}
+              {storageInfo.isAdmin && (
+                <div className="text-center py-2">
+                  <span className="text-sm text-purple-400 font-medium">
+                    🚀 Stockage illimité - Aucune restriction
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       
       {/* Contenu conditionnel selon l'onglet */}
       {currentTab === 'upload' && (
@@ -290,7 +507,21 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
         ) : (
           <p className="text-lg text-gray-300">Glissez-déposez des fichiers ici, ou <span className="text-indigo-400 font-medium cursor-pointer">cliquez pour sélectionner</span></p>
         )}
-        <p className="text-sm text-gray-400 mt-2">Taille maximale par fichier: 100MB | Expiration: 7 jours</p>
+        <p className="text-sm text-gray-400 mt-2">
+          {storageInfo?.isAdmin ? (
+            <>
+              Taille maximale par fichier: Illimité | 
+              Nombre de fichiers: Illimité | 
+              Expiration: 7 jours
+            </>
+          ) : (
+            <>
+              Taille maximale par fichier: {storageInfo?.maxFileSizeFormatted || '10GB'} | 
+              Max {storageInfo?.maxFileCount || 10} fichiers | 
+              Expiration: 7 jours
+            </>
+          )}
+        </p>
       </div>
 
       {/* Fichiers à uploader */}
@@ -333,14 +564,107 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
               </>
             )}
           </button>
-          {uploading && (
-            <div className="mt-4 w-full bg-gray-700 rounded-full h-2.5">
-              <div
-                className="progress-bar progress-bar-shine bg-gradient-to-r from-purple-500 to-indigo-500 h-2.5 rounded-full relative"
-                style={{ width: `${uploadProgress}%` }}
-              ></div>
+        </div>
+      )}
+
+      {/* Interface d'upload détaillée */}
+      {uploading && uploadStats && (
+        <div className="mt-8 glass-card p-6 rounded-xl border border-indigo-500/30 fade-in">
+          {/* En-tête avec statut */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-indigo-500/20 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-indigo-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm0 2h12v8H4V6z" clipRule="evenodd"/>
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white glow-effect">Upload en cours</h3>
+                <div className="text-sm text-gray-400">{uploadStats.currentFile}</div>
+              </div>
             </div>
-          )}
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-sm text-green-400 font-medium">Actif</span>
+            </div>
+          </div>
+
+          {/* Informations principales en une ligne */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="glass-card p-4 rounded-lg border border-yellow-500/20 text-center">
+              <div className="w-8 h-8 bg-yellow-500/20 rounded-lg flex items-center justify-center mx-auto mb-2">
+                <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
+                </svg>
+              </div>
+              <div className="text-sm text-yellow-300 mb-1">Destination</div>
+              <div className="text-lg font-bold text-white">Emynopass</div>
+            </div>
+
+            <div className="glass-card p-4 rounded-lg border border-blue-500/20 text-center">
+              <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center mx-auto mb-2">
+                <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm0 2h12v8H4V6z" clipRule="evenodd"/>
+                </svg>
+              </div>
+              <div className="text-sm text-blue-300 mb-1">Queue</div>
+              <div className="text-lg font-bold text-white">{uploadStats.filesInQueue + 1} fichier{uploadStats.filesInQueue > 0 ? 's' : ''}</div>
+            </div>
+
+            <div className="glass-card p-4 rounded-lg border border-green-500/20 text-center">
+              <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center mx-auto mb-2">
+                <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                </svg>
+              </div>
+              <div className="text-sm text-green-300 mb-1">Vitesse</div>
+              <div className="text-lg font-bold text-white">{uploadStats.speed}</div>
+            </div>
+
+            <div className="glass-card p-4 rounded-lg border border-red-500/20 text-center">
+              <div className="w-8 h-8 bg-red-500/20 rounded-lg flex items-center justify-center mx-auto mb-2">
+                <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/>
+                </svg>
+              </div>
+              <div className="text-sm text-red-300 mb-1">Temps restant</div>
+              <div className="text-lg font-bold text-white">{uploadStats.remainingTime}</div>
+            </div>
+          </div>
+
+          {/* Barre de progression principale */}
+          <div className="glass-card p-4 rounded-lg border border-indigo-500/20 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm text-gray-400">Progression</div>
+              <div className="text-2xl font-bold text-white">{uploadStats.progress}%</div>
+            </div>
+            <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-4 rounded-full transition-all duration-300 ease-out relative"
+                style={{ width: `${uploadStats.progress}%` }}
+              >
+                <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+              </div>
+            </div>
+            <div className="flex justify-between items-center mt-2 text-xs text-gray-400">
+              <span>{uploadStats.fileSize}</span>
+              <span>{uploadStats.filesInQueue > 0 ? `${uploadStats.filesInQueue} fichier${uploadStats.filesInQueue > 1 ? 's' : ''} en attente` : 'Dernier fichier'}</span>
+            </div>
+          </div>
+
+          {/* Bouton d'annulation */}
+          <div className="text-center">
+            <button
+              onClick={() => {
+                setUploading(false);
+                setUploadStats(null);
+                setUploadProgress(0);
+              }}
+              className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors duration-200"
+            >
+              Annuler
+            </button>
+          </div>
         </div>
       )}
 

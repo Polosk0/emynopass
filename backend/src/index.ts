@@ -3,11 +3,17 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
+import path from 'path';
+import fs from 'fs';
+import { promisify } from 'util';
+import { exec } from 'child_process';
 import database from './database';
 import uploadRoutes from './routes/upload';
 import authRoutes from './routes/auth';
 import adminRoutes from './routes/admin';
 import shareRoutes from './routes/share';
+
+const execAsync = promisify(exec);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -104,6 +110,146 @@ app.get('/api/public/stats', async (req, res) => {
   }
 });
 
+// Route publique pour les informations de stockage (page de connexion)
+app.get('/api/public/storage', async (req, res) => {
+  try {
+    const uploadDir = path.join(process.cwd(), 'uploads');
+    const logsDir = path.join(process.cwd(), 'logs');
+    const dbPath = path.join(process.cwd(), 'data', 'emynopass.db');
+    
+    // Calculer les tailles des différents composants
+    const uploadStats = await getDirectorySize(uploadDir);
+    const logsStats = await getDirectorySize(logsDir);
+    
+    // Taille de la base de données
+    let dbSize = 0;
+    if (fs.existsSync(dbPath)) {
+      const dbStats = fs.statSync(dbPath);
+      dbSize = dbStats.size;
+    }
+    
+    // Informations du disque
+    const diskInfo = await getDiskInfo();
+    
+    // Calculer l'espace disponible pour Emynopass
+    const emynopassTotal = uploadStats.size + dbSize + logsStats.size;
+    const availableForEmynopass = diskInfo.free;
+    const emynopassPercentage = diskInfo.total > 0 ? (emynopassTotal / diskInfo.total) * 100 : 0;
+    
+    res.json({
+      disk: {
+        total: diskInfo.total,
+        free: diskInfo.free,
+        used: diskInfo.used,
+        totalFormatted: formatBytes(diskInfo.total),
+        freeFormatted: formatBytes(diskInfo.free),
+        usedFormatted: formatBytes(diskInfo.used)
+      },
+      emynopass: {
+        total: emynopassTotal,
+        totalFormatted: formatBytes(emynopassTotal),
+        breakdown: {
+          files: uploadStats.size,
+          filesFormatted: formatBytes(uploadStats.size),
+          database: dbSize,
+          databaseFormatted: formatBytes(dbSize),
+          logs: logsStats.size,
+          logsFormatted: formatBytes(logsStats.size)
+        },
+        fileCount: uploadStats.fileCount,
+        percentage: emynopassPercentage
+      },
+      available: {
+        total: availableForEmynopass,
+        totalFormatted: formatBytes(availableForEmynopass),
+        percentage: diskInfo.total > 0 ? (availableForEmynopass / diskInfo.total) * 100 : 0
+      }
+    });
+  } catch (error) {
+    console.error('Erreur info stockage:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Fonction pour calculer la taille d'un répertoire
+async function getDirectorySize(dirPath: string): Promise<{ size: number; fileCount: number }> {
+  let totalSize = 0;
+  let fileCount = 0;
+
+  try {
+    if (!fs.existsSync(dirPath)) {
+      return { size: 0, fileCount: 0 };
+    }
+
+    const items = fs.readdirSync(dirPath);
+    
+    for (const item of items) {
+      const itemPath = path.join(dirPath, item);
+      const stats = fs.statSync(itemPath);
+      
+      if (stats.isDirectory()) {
+        const subDirSize = await getDirectorySize(itemPath);
+        totalSize += subDirSize.size;
+        fileCount += subDirSize.fileCount;
+      } else {
+        totalSize += stats.size;
+        fileCount++;
+      }
+    }
+  } catch (error) {
+    console.error(`Erreur calcul taille répertoire ${dirPath}:`, error);
+  }
+
+  return { size: totalSize, fileCount };
+}
+
+// Fonction pour obtenir les informations du disque (Windows/Linux)
+async function getDiskInfo(): Promise<{ total: number; free: number; used: number }> {
+  try {
+    const isWindows = process.platform === 'win32';
+    
+    if (isWindows) {
+      // Windows: utiliser wmic
+      const { stdout } = await execAsync('wmic logicaldisk get size,freespace,caption /format:csv');
+      const lines = stdout.split('\n').filter(line => line.includes('C:'));
+      
+      if (lines.length > 0) {
+        const parts = lines[0].split(',');
+        // Format: Node,Caption,FreeSpace,Size
+        const free = parseInt(parts[2]) || 0;
+        const total = parseInt(parts[3]) || 0;
+        const used = total - free;
+        
+        return { total, free, used };
+      }
+    } else {
+      // Linux/Mac: utiliser df
+      const { stdout } = await execAsync('df -B1 /');
+      const lines = stdout.split('\n');
+      const parts = lines[1].split(/\s+/);
+      
+      const total = parseInt(parts[1]) || 0;
+      const used = parseInt(parts[2]) || 0;
+      const free = parseInt(parts[3]) || 0;
+      
+      return { total, free, used };
+    }
+  } catch (error) {
+    console.error('Erreur récupération info disque:', error);
+  }
+  
+  // Fallback: estimation basée sur l'espace utilisé
+  const uploadDir = path.join(process.cwd(), 'uploads');
+  const uploadSize = await getDirectorySize(uploadDir);
+  
+  // Estimation: 500 GB total, 200 GB utilisé par le système
+  return {
+    total: 500 * 1024 * 1024 * 1024, // 500 GB
+    free: 300 * 1024 * 1024 * 1024,   // 300 GB libre
+    used: 200 * 1024 * 1024 * 1024    // 200 GB utilisé
+  };
+}
+
 // Fonction utilitaire pour formater les tailles
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -150,20 +296,35 @@ const startServer = async () => {
     await database.init();
     console.log('✅ Database initialized');
 
-    // Nettoyage automatique des fichiers expirés (toutes les heures)
+    // Nettoyage automatique des fichiers expirés, partages orphelins et comptes démo (toutes les heures)
     setInterval(async () => {
       try {
-        console.log('🧹 Nettoyage automatique des fichiers expirés...');
+        console.log('🧹 Nettoyage automatique des fichiers expirés, partages orphelins et comptes démo...');
         const deletedFiles = await database.deleteExpiredFiles();
         const deletedSessions = await database.deleteExpiredSessions();
+        const deletedOrphanedShares = await database.deleteOrphanedShares();
+        const deletedDemoUsers = await database.deleteExpiredDemoUsers();
         
-        if (deletedFiles > 0 || deletedSessions > 0) {
-          console.log(`✅ Nettoyage terminé: ${deletedFiles} fichiers et ${deletedSessions} sessions supprimés`);
+        if (deletedFiles > 0 || deletedSessions > 0 || deletedOrphanedShares > 0 || deletedDemoUsers > 0) {
+          console.log(`✅ Nettoyage terminé: ${deletedFiles} fichiers, ${deletedSessions} sessions, ${deletedOrphanedShares} partages orphelins et ${deletedDemoUsers} comptes démo supprimés`);
         }
       } catch (error) {
         console.error('❌ Erreur lors du nettoyage automatique:', error);
       }
     }, 60 * 60 * 1000); // Toutes les heures
+
+    // Nettoyage initial des partages orphelins et comptes démo au démarrage
+    try {
+      console.log('🧹 Nettoyage initial des partages orphelins et comptes démo...');
+      const deletedOrphanedShares = await database.deleteOrphanedShares();
+      const deletedDemoUsers = await database.deleteExpiredDemoUsers();
+      
+      if (deletedOrphanedShares > 0 || deletedDemoUsers > 0) {
+        console.log(`✅ Nettoyage initial terminé: ${deletedOrphanedShares} partage(s) orphelin(s) et ${deletedDemoUsers} compte(s) démo supprimé(s)`);
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors du nettoyage initial:', error);
+    }
 
     app.listen(PORT, () => {
       console.log('🚀 Emynopass Backend started successfully!');

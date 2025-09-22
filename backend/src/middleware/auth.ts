@@ -10,6 +10,7 @@ export interface AuthRequest extends Request {
     email: string;
     name: string;
     role: 'USER' | 'ADMIN';
+    isDemo: boolean;
   };
 }
 
@@ -52,7 +53,8 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
       id: user.id,
       email: user.email,
       name: user.name,
-      role: user.role
+      role: user.role,
+      isDemo: user.isDemo
     };
     
     next();
@@ -86,7 +88,8 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
             id: user.id,
             email: user.email,
             name: user.name,
-            role: user.role
+            role: user.role,
+            isDemo: user.isDemo
           };
         }
       }

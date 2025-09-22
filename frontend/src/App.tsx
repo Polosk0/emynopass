@@ -6,7 +6,8 @@ import Login from './components/Login';
 import FileUpload from './components/FileUpload';
 import AdminPanel from './components/AdminPanel';
 import PublicShare from './components/PublicShare';
-import DenseSpiderWebBackground from './components/DenseSpiderWebBackground';
+import CanvasParticleNetwork from './components/CanvasParticleNetwork';
+import BetaBanner from './components/BetaBanner';
 
 interface ApiStatus {
   status: string;
@@ -91,9 +92,13 @@ function App() {
   // Gérer les routes publiques
   if (isPublicShare) {
     return (
-      <Routes>
-        <Route path="/share/:token" element={<PublicShare />} />
-      </Routes>
+      <div className="min-h-screen bg-gray-950 relative overflow-hidden">
+        <CanvasParticleNetwork />
+        <BetaBanner />
+        <Routes>
+          <Route path="/share/:token" element={<PublicShare />} />
+        </Routes>
+      </div>
     );
   }
 
@@ -101,7 +106,8 @@ function App() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center relative overflow-hidden">
-        <DenseSpiderWebBackground />
+        <CanvasParticleNetwork />
+        <BetaBanner />
         <div className="glass-card p-8 rounded-2xl shadow-2xl text-center fade-in">
           <div className="text-center">
             <Zap className="h-16 w-16 text-indigo-400 mx-auto mb-4 main-icon glow-effect" />
@@ -115,12 +121,19 @@ function App() {
 
   // Affichage de la page de connexion si non authentifié
   if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} />;
+    return (
+      <div className="min-h-screen bg-gray-950 relative overflow-hidden">
+        <CanvasParticleNetwork />
+        <BetaBanner />
+        <Login onLogin={handleLogin} />
+      </div>
+    );
   }
 
   return (
       <div className="min-h-screen bg-gray-950 relative overflow-hidden">
-        <DenseSpiderWebBackground />
+        <CanvasParticleNetwork />
+        <BetaBanner />
       
       {/* Header */}
       <header className="glass-card shadow-2xl border-b border-gray-700 relative z-10">
@@ -291,6 +304,7 @@ function App() {
                 </div>
               </div>
             </div>
+
 
             {/* Welcome Section */}
             <div className="glass-card rounded-lg shadow-2xl p-8 mb-8 glass-card-hover">

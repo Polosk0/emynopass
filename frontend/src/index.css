@@ -36,17 +36,20 @@ html {
 
 body {
   margin: 0;
+  padding: 0;
   min-width: 320px;
   min-height: 100vh;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   overflow-x: hidden;
+  position: relative;
 }
 
 #root {
   width: 100%;
   margin: 0 auto;
   min-height: 100vh;
+  position: relative;
 }
 
 /* Effets glassmorphism */
@@ -576,4 +579,20 @@ body {
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
   animation: draw 0.8s cubic-bezier(0.76, 0, 0.24, 1) forwards;
+}
+
+/* Animation fade-in-up pour les modales */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out;
 }
