@@ -16,14 +16,13 @@ RUN npm run build
 
 # Créer les dossiers avec permissions
 RUN mkdir -p /app/data /app/uploads /app/logs
-RUN chmod -R 777 /app/data /app/uploads /app/logs
 
 # Créer une base de données SQLite vide pour éviter les erreurs
 RUN touch /app/data/emynopass.db
-RUN chmod 666 /app/data/emynopass.db
 
-# S'assurer que le dossier data est accessible
-RUN chown -R node:node /app/data
+# S'assurer que tous les dossiers appartiennent à l'utilisateur node
+RUN chown -R node:node /app/data /app/uploads /app/logs
+RUN chmod -R 755 /app/data /app/uploads /app/logs
 
 # Vérifier que la compilation a réussi
 RUN ls -la /app/dist/
@@ -37,5 +36,8 @@ ENV NODE_ENV=production
 ENV PORT=3001
 ENV DATABASE_PATH=/app/data/emynopass.db
 
-# Commande de démarrage avec gestion d'erreur et diagnostic
-CMD ["sh", "-c", "echo '🔧 [DEBUG] Démarrage du backend...' && echo '🔧 [DEBUG] Vérification des fichiers...' && ls -la /app/dist/ && echo '🔧 [DEBUG] Vérification des permissions...' && ls -la /app/data/ && echo '🔧 [DEBUG] Lancement du backend...' && node dist/index.js"]
+# Changer vers l'utilisateur node pour éviter les problèmes de permissions
+USER node
+
+# Commande de démarrage
+CMD ["node", "dist/index.js"]
