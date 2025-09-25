@@ -140,8 +140,16 @@ class Database {
   private initializeTablesSequential(timeout: NodeJS.Timeout, resolve: () => void, reject: (error: any) => void): void {
     console.log('🔧 [DEBUG] Début de l\'initialisation séquentielle des tables...');
     
-    // Table Users
+    // Utiliser une approche plus simple avec setTimeout pour éviter les problèmes de timing
     console.log('🔧 [DEBUG] Création de la table users...');
+    
+    // Ajouter un timeout spécifique pour cette opération
+    const tableTimeout = setTimeout(() => {
+      console.error('❌ [DEBUG] Timeout création table users (5 secondes)');
+      clearTimeout(timeout);
+      reject(new Error('Timeout création table users'));
+    }, 5000);
+    
     this.db.run(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -157,8 +165,14 @@ class Database {
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `, (err) => {
+      clearTimeout(tableTimeout);
       if (err) {
         console.error('❌ [DEBUG] Erreur création table users:', err);
+        console.error('❌ [DEBUG] Détails erreur:', {
+          code: (err as any).code,
+          message: err.message,
+          stack: err.stack
+        });
         clearTimeout(timeout);
         reject(err);
         return;
