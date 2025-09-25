@@ -19,6 +19,7 @@ services:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
       - ./backend/data:/app/data
+    user: "1001:1001"
     networks:
       - emynopass-network
     # Utiliser la commande du Dockerfile qui inclut les diagnostics
