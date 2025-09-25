@@ -2,7 +2,7 @@
 FROM node:18-alpine AS builder
 
 # Installer les dépendances système
-RUN apk add --no-cache wget sqlite
+RUN apk add --no-cache wget sqlite curl
 
 # Définir le répertoire de travail
 WORKDIR /app
@@ -25,6 +25,10 @@ RUN chmod 666 /app/data/emynopass.db
 # S'assurer que le dossier data est accessible
 RUN chown -R node:node /app/data
 
+# Vérifier que la compilation a réussi
+RUN ls -la /app/dist/
+RUN test -f /app/dist/index.js || (echo "❌ Fichier dist/index.js manquant" && exit 1)
+
 # Exposer le port
 EXPOSE 3001
 
@@ -33,5 +37,5 @@ ENV NODE_ENV=production
 ENV PORT=3001
 ENV DATABASE_PATH=/app/data/emynopass.db
 
-# Commande de démarrage
-CMD ["node", "dist/index.js"]
+# Commande de démarrage avec gestion d'erreur
+CMD ["sh", "-c", "echo '🔧 [DEBUG] Démarrage du backend...' && node dist/index.js"]

@@ -292,11 +292,21 @@ app.use('*', (req, res) => {
 // Démarrage serveur
 const startServer = async () => {
   try {
+    console.log('🔧 [DEBUG] Début du démarrage du serveur...');
+    console.log('🔧 [DEBUG] Variables d\'environnement:');
+    console.log('  - NODE_ENV:', process.env.NODE_ENV);
+    console.log('  - PORT:', process.env.PORT);
+    console.log('  - DATABASE_PATH:', process.env.DATABASE_PATH);
+    console.log('  - JWT_SECRET:', process.env.JWT_SECRET ? 'Défini' : 'Non défini');
+    console.log('  - FRONTEND_URL:', process.env.FRONTEND_URL);
+    
     // Initialiser la base de données
+    console.log('🔧 [DEBUG] Initialisation de la base de données...');
     await database.init();
-    console.log('✅ Database initialized');
+    console.log('✅ [DEBUG] Database initialized successfully');
 
     // Nettoyage automatique des fichiers expirés, partages orphelins et comptes démo (toutes les heures)
+    console.log('🔧 [DEBUG] Configuration du nettoyage automatique...');
     setInterval(async () => {
       try {
         console.log('🧹 Nettoyage automatique des fichiers expirés, partages orphelins et comptes démo...');
@@ -314,6 +324,7 @@ const startServer = async () => {
     }, 60 * 60 * 1000); // Toutes les heures
 
     // Nettoyage initial des partages orphelins et comptes démo au démarrage
+    console.log('🔧 [DEBUG] Début du nettoyage initial...');
     try {
       console.log('🧹 Nettoyage initial des partages orphelins et comptes démo...');
       const deletedOrphanedShares = await database.deleteOrphanedShares();
@@ -321,45 +332,62 @@ const startServer = async () => {
       
       if (deletedOrphanedShares > 0 || deletedDemoUsers > 0) {
         console.log(`✅ Nettoyage initial terminé: ${deletedOrphanedShares} partage(s) orphelin(s) et ${deletedDemoUsers} compte(s) démo supprimé(s)`);
+      } else {
+        console.log('✅ [DEBUG] Nettoyage initial terminé - aucun élément à supprimer');
       }
     } catch (error) {
-      console.error('❌ Erreur lors du nettoyage initial:', error);
+      console.error('❌ [DEBUG] Erreur lors du nettoyage initial:', error);
     }
 
+    console.log('🔧 [DEBUG] Démarrage du serveur Express...');
     app.listen(PORT, () => {
-      console.log('🚀 Emynopass Backend started successfully!');
-      console.log(`📍 Server running on http://localhost:${PORT}`);
-      console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
-      console.log(`📊 Health check: http://localhost:${PORT}/health`);
-      console.log(`🔐 Auth API: http://localhost:${PORT}/api/auth`);
-      console.log(`📤 Upload API: http://localhost:${PORT}/api/upload`);
-      console.log(`🔗 Share API: http://localhost:${PORT}/api/share`);
-      console.log(`👑 Admin API: http://localhost:${PORT}/api/admin`);
-      console.log(`🗄️  Database test: http://localhost:${PORT}/api/test-db`);
-      console.log(`👥 Users list: http://localhost:${PORT}/api/users`);
+      console.log('🚀 [DEBUG] Emynopass Backend started successfully!');
+      console.log(`📍 [DEBUG] Server running on http://localhost:${PORT}`);
+      console.log(`🌐 [DEBUG] Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
+      console.log(`📊 [DEBUG] Health check: http://localhost:${PORT}/health`);
+      console.log(`🔐 [DEBUG] Auth API: http://localhost:${PORT}/api/auth`);
+      console.log(`📤 [DEBUG] Upload API: http://localhost:${PORT}/api/upload`);
+      console.log(`🔗 [DEBUG] Share API: http://localhost:${PORT}/api/share`);
+      console.log(`👑 [DEBUG] Admin API: http://localhost:${PORT}/api/admin`);
+      console.log(`🗄️  [DEBUG] Database test: http://localhost:${PORT}/api/test-db`);
+      console.log(`👥 [DEBUG] Users list: http://localhost:${PORT}/api/users`);
       console.log('');
       console.log('🔐 Comptes disponibles :');
       console.log('   👑 Admin: polosko@emynopass.dev / Emynopass2024!');
       console.log('   👤 Démo: demo@emynopass.dev / demo2024');
       console.log('⏰ Started at:', new Date().toLocaleString());
+      console.log('✅ [DEBUG] Serveur démarré avec succès - prêt à recevoir des requêtes');
     });
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    console.error('❌ [DEBUG] Failed to start server:', error);
+    console.error('❌ [DEBUG] Stack trace:', error instanceof Error ? error.stack : 'No stack trace available');
     process.exit(1);
   }
 };
 
 // Gestion arrêt propre
 process.on('SIGINT', async () => {
-  console.log('\n🛑 Shutting down server...');
+  console.log('\n🛑 [DEBUG] SIGINT received - Shutting down server...');
   await database.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  console.log('\n🛑 Shutting down server...');
+  console.log('\n🛑 [DEBUG] SIGTERM received - Shutting down server...');
   await database.close();
   process.exit(0);
+});
+
+// Gestion des erreurs non capturées
+process.on('uncaughtException', (error) => {
+  console.error('❌ [DEBUG] Uncaught Exception:', error);
+  console.error('❌ [DEBUG] Stack trace:', error.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ [DEBUG] Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
 });
 
 startServer();

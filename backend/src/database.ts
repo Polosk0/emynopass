@@ -51,43 +51,83 @@ class Database {
   private dbPath: string;
 
   constructor() {
-        // Utiliser un fichier SQLite persistant
-        // En Docker, utiliser /app/data, sinon utiliser le chemin relatif
-        if (process.env.NODE_ENV === 'production' && process.env.DATABASE_PATH) {
-          this.dbPath = process.env.DATABASE_PATH;
-        } else {
-          this.dbPath = path.join(process.cwd(), 'data', 'emynopass.db');
-        }
+    console.log('🔧 [DEBUG] Initialisation de la classe Database...');
+    
+    // Utiliser un fichier SQLite persistant
+    // En Docker, utiliser /app/data, sinon utiliser le chemin relatif
+    if (process.env.NODE_ENV === 'production' && process.env.DATABASE_PATH) {
+      this.dbPath = process.env.DATABASE_PATH;
+      console.log('🔧 [DEBUG] Mode production - utilisation de DATABASE_PATH:', this.dbPath);
+    } else {
+      this.dbPath = path.join(process.cwd(), 'data', 'emynopass.db');
+      console.log('🔧 [DEBUG] Mode développement - chemin relatif:', this.dbPath);
+    }
+    
+    console.log('🔧 [DEBUG] Chemin final de la base de données:', this.dbPath);
     
     // Créer le dossier data s'il n'existe pas
     const dataDir = path.dirname(this.dbPath);
+    console.log('🔧 [DEBUG] Dossier de données:', dataDir);
+    
     if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+      console.log('🔧 [DEBUG] Création du dossier de données...');
+      try {
+        fs.mkdirSync(dataDir, { recursive: true });
+        console.log('✅ [DEBUG] Dossier de données créé avec succès');
+      } catch (error) {
+        console.error('❌ [DEBUG] Erreur création dossier de données:', error);
+        throw error;
+      }
+    } else {
+      console.log('✅ [DEBUG] Dossier de données existe déjà');
     }
     
+    // Vérifier les permissions du dossier
+    try {
+      const stats = fs.statSync(dataDir);
+      console.log('🔧 [DEBUG] Permissions du dossier de données:', {
+        mode: stats.mode.toString(8),
+        uid: stats.uid,
+        gid: stats.gid
+      });
+    } catch (error) {
+      console.error('❌ [DEBUG] Erreur lecture permissions dossier:', error);
+    }
+    
+    console.log('🔧 [DEBUG] Connexion à la base de données SQLite...');
     this.db = new sqlite3.Database(this.dbPath, (err) => {
       if (err) {
-        console.error('❌ Erreur connexion SQLite:', err);
+        console.error('❌ [DEBUG] Erreur connexion SQLite:', err);
+        console.error('❌ [DEBUG] Détails de l\'erreur:', {
+          code: (err as any).code,
+          message: err.message,
+          stack: err.stack
+        });
         throw err;
       }
-      console.log(`📦 Database path: ${this.dbPath}`);
+      console.log(`📦 [DEBUG] Database path: ${this.dbPath}`);
+      console.log('✅ [DEBUG] Connexion SQLite établie avec succès');
     });
   }
 
   async init(): Promise<void> {
     return new Promise((resolve, reject) => {
+      console.log('🔧 [DEBUG] Début de l\'initialisation de la base de données...');
+      
       // Vérifier d'abord la connectivité
       this.db.get('SELECT 1', (err) => {
         if (err) {
-          console.error('❌ Erreur test connectivité SQLite:', err);
+          console.error('❌ [DEBUG] Erreur test connectivité SQLite:', err);
           reject(err);
           return;
         }
-        console.log('✅ Connexion SQLite testée avec succès');
+        console.log('✅ [DEBUG] Connexion SQLite testée avec succès');
       });
 
+      console.log('🔧 [DEBUG] Début de la sérialisation des opérations SQLite...');
       this.db.serialize(() => {
         // Table Users
+        console.log('🔧 [DEBUG] Création de la table users...');
         this.db.run(`
           CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -102,9 +142,16 @@ class Database {
             createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
             updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
           )
-        `);
+        `, (err) => {
+          if (err) {
+            console.error('❌ [DEBUG] Erreur création table users:', err);
+          } else {
+            console.log('✅ [DEBUG] Table users créée avec succès');
+          }
+        });
 
         // Table Files
+        console.log('🔧 [DEBUG] Création de la table files...');
         this.db.run(`
           CREATE TABLE IF NOT EXISTS files (
             id TEXT PRIMARY KEY,
@@ -119,9 +166,16 @@ class Database {
             userId TEXT NOT NULL,
             FOREIGN KEY (userId) REFERENCES users (id)
           )
-        `);
+        `, (err) => {
+          if (err) {
+            console.error('❌ [DEBUG] Erreur création table files:', err);
+          } else {
+            console.log('✅ [DEBUG] Table files créée avec succès');
+          }
+        });
 
         // Table Shares
+        console.log('🔧 [DEBUG] Création de la table shares...');
         this.db.run(`
           CREATE TABLE IF NOT EXISTS shares (
             id TEXT PRIMARY KEY,
@@ -139,26 +193,39 @@ class Database {
             FOREIGN KEY (fileId) REFERENCES files (id),
             FOREIGN KEY (userId) REFERENCES users (id)
           )
-        `);
+        `, (err) => {
+          if (err) {
+            console.error('❌ [DEBUG] Erreur création table shares:', err);
+          } else {
+            console.log('✅ [DEBUG] Table shares créée avec succès');
+          }
+        });
 
         // Migration : Ajouter les colonnes title et description si elles n'existent pas
+        console.log('🔧 [DEBUG] Migration: ajout colonne title...');
         this.db.run(`
           ALTER TABLE shares ADD COLUMN title TEXT
         `, (err) => {
           if (err && !err.message.includes('duplicate column name')) {
-            console.error('Erreur ajout colonne title:', err);
+            console.error('❌ [DEBUG] Erreur ajout colonne title:', err);
+          } else {
+            console.log('✅ [DEBUG] Colonne title ajoutée ou déjà présente');
           }
         });
 
+        console.log('🔧 [DEBUG] Migration: ajout colonne description...');
         this.db.run(`
           ALTER TABLE shares ADD COLUMN description TEXT
         `, (err) => {
           if (err && !err.message.includes('duplicate column name')) {
-            console.error('Erreur ajout colonne description:', err);
+            console.error('❌ [DEBUG] Erreur ajout colonne description:', err);
+          } else {
+            console.log('✅ [DEBUG] Colonne description ajoutée ou déjà présente');
           }
         });
 
         // Table Sessions pour l'authentification
+        console.log('🔧 [DEBUG] Création de la table sessions...');
         this.db.run(`
           CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
@@ -170,9 +237,12 @@ class Database {
           )
         `, (err) => {
           if (err) {
+            console.error('❌ [DEBUG] Erreur création table sessions:', err);
             reject(err);
           } else {
-            console.log('✅ Database tables created successfully');
+            console.log('✅ [DEBUG] Table sessions créée avec succès');
+            console.log('✅ [DEBUG] Database tables created successfully');
+            console.log('🔧 [DEBUG] Début du seed des données...');
             this.seedData().then(resolve).catch(reject);
           }
         });
@@ -183,7 +253,10 @@ class Database {
   private async seedData(): Promise<void> {
     return new Promise(async (resolve, reject) => {
       try {
+        console.log('🔧 [DEBUG] Début du seed des données utilisateurs...');
+        
         // Créer le compte admin principal
+        console.log('🔧 [DEBUG] Hachage du mot de passe admin...');
         const adminPassword = await bcrypt.hash('Emynopass2024!', 10);
 
         const admin: User = {
@@ -199,6 +272,7 @@ class Database {
         };
 
         // Créer un compte de démonstration
+        console.log('🔧 [DEBUG] Hachage du mot de passe démo...');
         const demoPassword = await bcrypt.hash('demo2024', 10);
 
         const demoUser: User = {
@@ -214,26 +288,38 @@ class Database {
         };
 
         // Insérer le compte admin
+        console.log('🔧 [DEBUG] Insertion du compte admin...');
         this.db.run(`
           INSERT OR IGNORE INTO users (id, email, password, name, role, isActive, isDemo, createdAt, updatedAt)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [admin.id, admin.email, admin.password, admin.name, admin.role, admin.isActive ? 1 : 0, admin.isDemo ? 1 : 0, admin.createdAt, admin.updatedAt]);
+        `, [admin.id, admin.email, admin.password, admin.name, admin.role, admin.isActive ? 1 : 0, admin.isDemo ? 1 : 0, admin.createdAt, admin.updatedAt], (err) => {
+          if (err) {
+            console.error('❌ [DEBUG] Erreur insertion admin:', err);
+          } else {
+            console.log('✅ [DEBUG] Compte admin inséré avec succès');
+          }
+        });
 
         // Insérer le compte démo
+        console.log('🔧 [DEBUG] Insertion du compte démo...');
         this.db.run(`
           INSERT OR IGNORE INTO users (id, email, password, name, role, isActive, isDemo, createdAt, updatedAt)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [demoUser.id, demoUser.email, demoUser.password, demoUser.name, demoUser.role, demoUser.isActive ? 1 : 0, demoUser.isDemo ? 1 : 0, demoUser.createdAt, demoUser.updatedAt], (err) => {
           if (err) {
+            console.error('❌ [DEBUG] Erreur insertion démo:', err);
             reject(err);
           } else {
-            console.log('✅ User accounts created successfully');
+            console.log('✅ [DEBUG] Compte démo inséré avec succès');
+            console.log('✅ [DEBUG] User accounts created successfully');
             console.log('👑 Admin: polosko@emynopass.dev / Emynopass2024!');
             console.log('👤 Demo: demo@emynopass.dev / demo2024');
+            console.log('🔧 [DEBUG] Seed des données terminé avec succès');
             resolve();
           }
         });
       } catch (error) {
+        console.error('❌ [DEBUG] Erreur dans seedData:', error);
         reject(error);
       }
     });

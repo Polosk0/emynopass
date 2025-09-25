@@ -22,6 +22,12 @@ services:
     networks:
       - emynopass-network
     command: ["node", "dist/index.js"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   frontend:
     build:
@@ -37,6 +43,18 @@ services:
       - emynopass-network
     healthcheck:
       disable: true
+
+  redis:
+    image: redis:alpine
+    container_name: emynopass-redis
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - emynopass-network
+    command: redis-server --appendonly yes
 
   nginx:
     image: nginx:alpine
@@ -58,6 +76,7 @@ volumes:
   emynopass-data:
   emynopass-uploads:
   emynopass-logs:
+  redis-data:
 
 networks:
   emynopass-network:
