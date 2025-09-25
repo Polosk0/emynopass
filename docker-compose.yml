@@ -21,13 +21,20 @@ services:
       - ./backend/data:/app/data
     networks:
       - emynopass-network
-    command: ["node", "dist/index.js"]
+    # Utiliser la commande du Dockerfile qui inclut les diagnostics
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    # Ajouter des limites de ressources pour éviter les problèmes de mémoire
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
 
   frontend:
     build:

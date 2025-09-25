@@ -37,5 +37,5 @@ ENV NODE_ENV=production
 ENV PORT=3001
 ENV DATABASE_PATH=/app/data/emynopass.db
 
-# Commande de démarrage avec gestion d'erreur
-CMD ["sh", "-c", "echo '🔧 [DEBUG] Démarrage du backend...' && node dist/index.js"]
+# Commande de démarrage avec gestion d'erreur et diagnostic
+CMD ["sh", "-c", "echo '🔧 [DEBUG] Démarrage du backend...' && echo '🔧 [DEBUG] Vérification des fichiers...' && ls -la /app/dist/ && echo '🔧 [DEBUG] Vérification des permissions...' && ls -la /app/data/ && echo '🔧 [DEBUG] Lancement du backend...' && node dist/index.js"]
