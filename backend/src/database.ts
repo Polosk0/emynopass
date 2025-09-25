@@ -114,144 +114,161 @@ class Database {
     return new Promise((resolve, reject) => {
       console.log('🔧 [DEBUG] Début de l\'initialisation de la base de données...');
       
+      // Timeout de sécurité pour toute l'initialisation
+      const globalTimeout = setTimeout(() => {
+        console.error('❌ [DEBUG] Timeout global lors de l\'initialisation (60 secondes)');
+        reject(new Error('Timeout global lors de l\'initialisation'));
+      }, 60000);
+      
       // Vérifier d'abord la connectivité
       this.db.get('SELECT 1', (err) => {
         if (err) {
           console.error('❌ [DEBUG] Erreur test connectivité SQLite:', err);
+          clearTimeout(globalTimeout);
           reject(err);
           return;
         }
         console.log('✅ [DEBUG] Connexion SQLite testée avec succès');
-      });
-
-      console.log('🔧 [DEBUG] Début de la sérialisation des opérations SQLite...');
-      this.db.serialize(() => {
-        // Table Users
-        console.log('🔧 [DEBUG] Création de la table users...');
-        this.db.run(`
-          CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            name TEXT,
-            role TEXT DEFAULT 'USER',
-            isActive INTEGER DEFAULT 1,
-            isDemo INTEGER DEFAULT 0,
-            isTemporaryDemo INTEGER DEFAULT 0,
-            demoExpiresAt TEXT,
-            createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
-          )
-        `, (err) => {
-          if (err) {
-            console.error('❌ [DEBUG] Erreur création table users:', err);
-          } else {
-            console.log('✅ [DEBUG] Table users créée avec succès');
-          }
-        });
-
-        // Table Files
-        console.log('🔧 [DEBUG] Création de la table files...');
-        this.db.run(`
-          CREATE TABLE IF NOT EXISTS files (
-            id TEXT PRIMARY KEY,
-            filename TEXT NOT NULL,
-            originalName TEXT NOT NULL,
-            mimetype TEXT NOT NULL,
-            size INTEGER NOT NULL,
-            path TEXT NOT NULL,
-            isEncrypted INTEGER DEFAULT 0,
-            uploadedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-            expiresAt TEXT,
-            userId TEXT NOT NULL,
-            FOREIGN KEY (userId) REFERENCES users (id)
-          )
-        `, (err) => {
-          if (err) {
-            console.error('❌ [DEBUG] Erreur création table files:', err);
-          } else {
-            console.log('✅ [DEBUG] Table files créée avec succès');
-          }
-        });
-
-        // Table Shares
-        console.log('🔧 [DEBUG] Création de la table shares...');
-        this.db.run(`
-          CREATE TABLE IF NOT EXISTS shares (
-            id TEXT PRIMARY KEY,
-            token TEXT UNIQUE NOT NULL,
-            password TEXT,
-            maxDownloads INTEGER,
-            downloads INTEGER DEFAULT 0,
-            expiresAt TEXT,
-            isActive INTEGER DEFAULT 1,
-            createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-            fileId TEXT NOT NULL,
-            userId TEXT NOT NULL,
-            title TEXT,
-            description TEXT,
-            FOREIGN KEY (fileId) REFERENCES files (id),
-            FOREIGN KEY (userId) REFERENCES users (id)
-          )
-        `, (err) => {
-          if (err) {
-            console.error('❌ [DEBUG] Erreur création table shares:', err);
-          } else {
-            console.log('✅ [DEBUG] Table shares créée avec succès');
-          }
-        });
-
-        // Migration : Ajouter les colonnes title et description si elles n'existent pas
-        console.log('🔧 [DEBUG] Migration: ajout colonne title...');
-        this.db.run(`
-          ALTER TABLE shares ADD COLUMN title TEXT
-        `, (err) => {
-          if (err && !err.message.includes('duplicate column name')) {
-            console.error('❌ [DEBUG] Erreur ajout colonne title:', err);
-          } else {
-            console.log('✅ [DEBUG] Colonne title ajoutée ou déjà présente');
-          }
-        });
-
-        console.log('🔧 [DEBUG] Migration: ajout colonne description...');
-        this.db.run(`
-          ALTER TABLE shares ADD COLUMN description TEXT
-        `, (err) => {
-          if (err && !err.message.includes('duplicate column name')) {
-            console.error('❌ [DEBUG] Erreur ajout colonne description:', err);
-          } else {
-            console.log('✅ [DEBUG] Colonne description ajoutée ou déjà présente');
-          }
-        });
-
-        // Table Sessions pour l'authentification
-        console.log('🔧 [DEBUG] Création de la table sessions...');
-        this.db.run(`
-          CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
-            userId TEXT NOT NULL,
-            token TEXT UNIQUE NOT NULL,
-            expiresAt TEXT NOT NULL,
-            createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (userId) REFERENCES users (id)
-          )
-        `, (err) => {
-          if (err) {
-            console.error('❌ [DEBUG] Erreur création table sessions:', err);
-            reject(err);
-          } else {
-            console.log('✅ [DEBUG] Table sessions créée avec succès');
-            console.log('✅ [DEBUG] Database tables created successfully');
-            console.log('🔧 [DEBUG] Début du seed des données...');
-            this.seedData().then(resolve).catch(reject);
-          }
-        });
+        console.log('🔧 [DEBUG] Continuons avec l\'initialisation des tables...');
+        
+        // Utiliser une approche plus simple et directe
+        this.initializeTablesSimple()
+          .then(() => {
+            console.log('✅ [DEBUG] Tables initialisées avec succès');
+            return this.seedData();
+          })
+          .then(() => {
+            console.log('✅ [DEBUG] Seed des données terminé');
+            clearTimeout(globalTimeout);
+            resolve();
+          })
+          .catch((error) => {
+            console.error('❌ [DEBUG] Erreur lors de l\'initialisation:', error);
+            clearTimeout(globalTimeout);
+            reject(error);
+          });
       });
     });
   }
 
+  private async initializeTablesSimple(): Promise<void> {
+    console.log('🔧 [DEBUG] Début de l\'initialisation des tables (approche Promise)...');
+    
+    try {
+      // Créer toutes les tables une par une
+      await this.createTable('users', `
+        CREATE TABLE IF NOT EXISTS users (
+          id TEXT PRIMARY KEY,
+          email TEXT UNIQUE NOT NULL,
+          password TEXT NOT NULL,
+          name TEXT,
+          role TEXT DEFAULT 'USER',
+          isActive INTEGER DEFAULT 1,
+          isDemo INTEGER DEFAULT 0,
+          isTemporaryDemo INTEGER DEFAULT 0,
+          demoExpiresAt TEXT,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
+      await this.createTable('files', `
+        CREATE TABLE IF NOT EXISTS files (
+          id TEXT PRIMARY KEY,
+          filename TEXT NOT NULL,
+          originalName TEXT NOT NULL,
+          mimetype TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          path TEXT NOT NULL,
+          isEncrypted INTEGER DEFAULT 0,
+          uploadedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          expiresAt TEXT,
+          userId TEXT NOT NULL,
+          FOREIGN KEY (userId) REFERENCES users (id)
+        )
+      `);
+      
+      await this.createTable('shares', `
+        CREATE TABLE IF NOT EXISTS shares (
+          id TEXT PRIMARY KEY,
+          token TEXT UNIQUE NOT NULL,
+          password TEXT,
+          maxDownloads INTEGER,
+          downloads INTEGER DEFAULT 0,
+          expiresAt TEXT,
+          isActive INTEGER DEFAULT 1,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          fileId TEXT NOT NULL,
+          userId TEXT NOT NULL,
+          title TEXT,
+          description TEXT,
+          FOREIGN KEY (fileId) REFERENCES files (id),
+          FOREIGN KEY (userId) REFERENCES users (id)
+        )
+      `);
+      
+      // Migrations
+      await this.runMigration('ALTER TABLE shares ADD COLUMN title TEXT');
+      await this.runMigration('ALTER TABLE shares ADD COLUMN description TEXT');
+      
+      await this.createTable('sessions', `
+        CREATE TABLE IF NOT EXISTS sessions (
+          id TEXT PRIMARY KEY,
+          userId TEXT NOT NULL,
+          token TEXT UNIQUE NOT NULL,
+          expiresAt TEXT NOT NULL,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (userId) REFERENCES users (id)
+        )
+      `);
+      
+      console.log('✅ [DEBUG] Toutes les tables ont été créées avec succès');
+      
+    } catch (error) {
+      console.error('❌ [DEBUG] Erreur lors de la création des tables:', error);
+      throw error;
+    }
+  }
+  
+  private createTable(tableName: string, sql: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      console.log(`🔧 [DEBUG] Création de la table ${tableName}...`);
+      this.db.run(sql, (err) => {
+        if (err) {
+          console.error(`❌ [DEBUG] Erreur création table ${tableName}:`, err);
+          reject(err);
+        } else {
+          console.log(`✅ [DEBUG] Table ${tableName} créée avec succès`);
+          resolve();
+        }
+      });
+    });
+  }
+  
+  private runMigration(sql: string): Promise<void> {
+    return new Promise((resolve) => {
+      console.log(`🔧 [DEBUG] Exécution migration: ${sql.substring(0, 50)}...`);
+      this.db.run(sql, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+          console.error('❌ [DEBUG] Erreur migration:', err);
+        } else {
+          console.log('✅ [DEBUG] Migration exécutée ou colonne déjà présente');
+        }
+        // Ne pas rejeter pour les migrations, continuer même en cas d'erreur
+        resolve();
+      });
+    });
+  }
+
+
   private async seedData(): Promise<void> {
     return new Promise(async (resolve, reject) => {
+      // Ajouter un timeout pour le seed des données
+      const seedTimeout = setTimeout(() => {
+        console.error('❌ [DEBUG] Timeout lors du seed des données (15 secondes)');
+        reject(new Error('Timeout lors du seed des données'));
+      }, 15000);
+      
       try {
         console.log('🔧 [DEBUG] Début du seed des données utilisateurs...');
         
@@ -308,6 +325,7 @@ class Database {
         `, [demoUser.id, demoUser.email, demoUser.password, demoUser.name, demoUser.role, demoUser.isActive ? 1 : 0, demoUser.isDemo ? 1 : 0, demoUser.createdAt, demoUser.updatedAt], (err) => {
           if (err) {
             console.error('❌ [DEBUG] Erreur insertion démo:', err);
+            clearTimeout(seedTimeout);
             reject(err);
           } else {
             console.log('✅ [DEBUG] Compte démo inséré avec succès');
@@ -315,11 +333,13 @@ class Database {
             console.log('👑 Admin: polosko@emynopass.dev / Emynopass2024!');
             console.log('👤 Demo: demo@emynopass.dev / demo2024');
             console.log('🔧 [DEBUG] Seed des données terminé avec succès');
+            clearTimeout(seedTimeout);
             resolve();
           }
         });
       } catch (error) {
         console.error('❌ [DEBUG] Erreur dans seedData:', error);
+        clearTimeout(seedTimeout);
         reject(error);
       }
     });
