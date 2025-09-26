@@ -31,8 +31,8 @@ sleep 10
 
 # Ajouter la colonne isDemo manquante
 echo '📊 Ajout de la colonne isDemo...'
-docker-compose exec postgres psql -U emynopass -d emynopass -c "ALTER TABLE users ADD COLUMN IF NOT EXISTS isDemo BOOLEAN DEFAULT 0;"
-docker-compose exec postgres psql -U emynopass -d emynopass -c "ALTER TABLE users ADD COLUMN IF NOT EXISTS isTemporaryDemo BOOLEAN DEFAULT 0;"
+docker-compose exec postgres psql -U emynopass -d emynopass -c "ALTER TABLE users ADD COLUMN IF NOT EXISTS isDemo BOOLEAN DEFAULT false;"
+docker-compose exec postgres psql -U emynopass -d emynopass -c "ALTER TABLE users ADD COLUMN IF NOT EXISTS isTemporaryDemo BOOLEAN DEFAULT false;"
 docker-compose exec postgres psql -U emynopass -d emynopass -c "ALTER TABLE users ADD COLUMN IF NOT EXISTS demoExpiresAt TEXT;"
 echo '✅ Colonnes ajoutées'
 echo ''
