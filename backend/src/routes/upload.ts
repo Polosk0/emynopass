@@ -9,7 +9,7 @@ import { handleMulterError, formatFileSize } from '../middleware/multerErrorHand
 
 const router = Router();
 
-// Configuration multer pour l'upload
+// Configuration multer optimisée pour gros fichiers
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = path.join(process.cwd(), 'uploads');
@@ -24,12 +24,17 @@ const storage = multer.diskStorage({
   }
 });
 
-// Configuration multer dynamique selon le rôle
+// Configuration multer dynamique selon le rôle - optimisée pour gros fichiers
 const createUploadMiddleware = (isAdmin: boolean) => {
   return multer({
     storage,
     limits: {
-      fileSize: isAdmin ? 50 * 1024 * 1024 * 1024 : 10 * 1024 * 1024 * 1024 // 50GB pour admins, 10GB pour autres
+      fileSize: isAdmin ? 50 * 1024 * 1024 * 1024 : 10 * 1024 * 1024 * 1024, // 50GB pour admins, 10GB pour autres
+      fieldSize: 1024 * 1024, // 1MB pour les champs
+      fieldNameSize: 100,
+      files: 10,
+      parts: 20,
+      headerPairs: 2000
     },
     fileFilter: (req, file, cb) => {
       // Accepter tous les types de fichiers

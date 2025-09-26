@@ -228,6 +228,10 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API_BASE_URL}/api/upload/files`, true);
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      
+      // Optimisations pour gros fichiers
+      xhr.timeout = 0; // Pas de timeout
+      xhr.withCredentials = false; // Éviter les cookies
 
       let startTime = Date.now();
       let lastLoaded = 0;
@@ -243,7 +247,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
           const timeDiff = (currentTime - lastTime) / 1000; // en secondes
           const loadedDiff = event.loaded - lastLoaded;
           
-          if (timeDiff > 0.5) { // Mettre à jour toutes les 500ms
+          if (timeDiff > 0.1) { // Mettre à jour toutes les 100ms pour plus de réactivité
             const speed = loadedDiff / timeDiff; // bytes par seconde
             const speedMBps = (speed / (1024 * 1024)).toFixed(1);
             
