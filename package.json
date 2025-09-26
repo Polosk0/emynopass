@@ -50,6 +50,10 @@
     "url": "."
   },
   "dependencies": {
-    "express-validator": "^7.2.1"
+    "bcryptjs": "^3.0.2",
+    "express-validator": "^7.2.1",
+    "pg": "^8.16.3",
+    "sqlite3": "^5.1.7",
+    "uuid": "^13.0.0"
   }
 }

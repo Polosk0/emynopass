@@ -1,8 +1,6 @@
-import sqlite3 from 'sqlite3';
+import { Pool, PoolClient } from 'pg';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import path from 'path';
-import fs from 'fs';
 
 export interface User {
   id: string;
@@ -47,728 +45,494 @@ export interface Share {
 }
 
 class Database {
-  private db: sqlite3.Database;
-  private dbPath: string;
+  private pool: Pool;
 
   constructor() {
-    console.log('🔧 [DEBUG] Initialisation de la classe Database...');
+    console.log('🔧 [DEBUG] Initialisation de la classe Database PostgreSQL...');
     
-    // Utiliser un fichier SQLite persistant
-    // En Docker, utiliser /app/data, sinon utiliser le chemin relatif
-    if (process.env.NODE_ENV === 'production' && process.env.DATABASE_PATH) {
-      this.dbPath = process.env.DATABASE_PATH;
-      console.log('🔧 [DEBUG] Mode production - utilisation de DATABASE_PATH:', this.dbPath);
-    } else {
-      this.dbPath = path.join(process.cwd(), 'data', 'emynopass.db');
-      console.log('🔧 [DEBUG] Mode développement - chemin relatif:', this.dbPath);
-    }
-    
-    console.log('🔧 [DEBUG] Chemin final de la base de données:', this.dbPath);
-    
-    // Créer le dossier data s'il n'existe pas
-    const dataDir = path.dirname(this.dbPath);
-    console.log('🔧 [DEBUG] Dossier de données:', dataDir);
-    
-    if (!fs.existsSync(dataDir)) {
-      console.log('🔧 [DEBUG] Création du dossier de données...');
-      try {
-        fs.mkdirSync(dataDir, { recursive: true });
-        console.log('✅ [DEBUG] Dossier de données créé avec succès');
-      } catch (error) {
-        console.error('❌ [DEBUG] Erreur création dossier de données:', error);
-        throw error;
-      }
-    } else {
-      console.log('✅ [DEBUG] Dossier de données existe déjà');
-    }
-    
-    // Vérifier les permissions du dossier
-    try {
-      const stats = fs.statSync(dataDir);
-      console.log('🔧 [DEBUG] Permissions du dossier de données:', {
-        mode: stats.mode.toString(8),
-        uid: stats.uid,
-        gid: stats.gid
-      });
-    } catch (error) {
-      console.error('❌ [DEBUG] Erreur lecture permissions dossier:', error);
-    }
-    
-    console.log('🔧 [DEBUG] Connexion à la base de données SQLite...');
-    this.db = new sqlite3.Database(this.dbPath, (err) => {
-      if (err) {
-        console.error('❌ [DEBUG] Erreur connexion SQLite:', err);
-        console.error('❌ [DEBUG] Détails de l\'erreur:', {
-          code: (err as any).code,
-          message: err.message,
-          stack: err.stack
-        });
-        throw err;
-      }
-      console.log(`📦 [DEBUG] Database path: ${this.dbPath}`);
-      console.log('✅ [DEBUG] Connexion SQLite établie avec succès');
+    // Configuration de la connexion PostgreSQL
+    const config = {
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      database: process.env.DB_NAME || 'emynopass',
+      user: process.env.DB_USER || 'emynopass',
+      password: process.env.DB_PASSWORD || 'emynopass',
+      max: 20, // Maximum de connexions dans le pool
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    };
+
+    console.log('🔧 [DEBUG] Configuration PostgreSQL:', {
+      host: config.host,
+      port: config.port,
+      database: config.database,
+      user: config.user,
+      max: config.max
+    });
+
+    this.pool = new Pool(config);
+
+    // Gestion des erreurs de connexion
+    this.pool.on('error', (err: Error) => {
+      console.error('❌ [DEBUG] Erreur pool PostgreSQL:', err);
+    });
+
+    this.pool.on('connect', () => {
+      console.log('✅ [DEBUG] Nouvelle connexion PostgreSQL établie');
     });
   }
 
   async init(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      console.log('🔧 [DEBUG] Début de l\'initialisation de la base de données...');
+    console.log('🔧 [DEBUG] Début de l\'initialisation de la base de données PostgreSQL...');
+    
+    try {
+      // Test de connexion
+      const client = await this.pool.connect();
+      console.log('✅ [DEBUG] Connexion PostgreSQL testée avec succès');
       
-      // Timeout de sécurité pour toute l'initialisation
-      const globalTimeout = setTimeout(() => {
-        console.error('❌ [DEBUG] Timeout global lors de l\'initialisation (60 secondes)');
-        reject(new Error('Timeout global lors de l\'initialisation'));
-      }, 60000);
+      // Création des tables
+      await this.createTables(client);
+      console.log('✅ [DEBUG] Tables créées avec succès');
       
-      // Vérifier d'abord la connectivité
-      this.db.get('SELECT 1', (err) => {
-        if (err) {
-          console.error('❌ [DEBUG] Erreur test connectivité SQLite:', err);
-          clearTimeout(globalTimeout);
-          reject(err);
-          return;
-        }
-        console.log('✅ [DEBUG] Connexion SQLite testée avec succès');
-        console.log('🔧 [DEBUG] Continuons avec l\'initialisation des tables...');
-        
-        // Utiliser une approche séquentielle directe
-        this.initializeTablesSequential(globalTimeout, resolve, reject);
-      });
-    });
+      // Seed des données
+      await this.seedData(client);
+      console.log('✅ [DEBUG] Seed des données terminé');
+      
+      client.release();
+      console.log('✅ [DEBUG] Initialisation PostgreSQL complète');
+    } catch (error) {
+      console.error('❌ [DEBUG] Erreur initialisation PostgreSQL:', error);
+      throw error;
+    }
   }
 
-  private initializeTablesSequential(timeout: NodeJS.Timeout, resolve: () => void, reject: (error: any) => void): void {
-    console.log('🔧 [DEBUG] Début de l\'initialisation séquentielle des tables...');
-    
-    // Utiliser une approche plus simple avec setTimeout pour éviter les problèmes de timing
-    console.log('🔧 [DEBUG] Création de la table users...');
-    
-    // Ajouter un timeout spécifique pour cette opération
-    const tableTimeout = setTimeout(() => {
-      console.error('❌ [DEBUG] Timeout création table users (5 secondes)');
-      clearTimeout(timeout);
-      reject(new Error('Timeout création table users'));
-    }, 5000);
-    
-    this.db.run(`
+  private async createTables(client: PoolClient): Promise<void> {
+    console.log('🔧 [DEBUG] Création des tables PostgreSQL...');
+
+    // Table users
+    await client.query(`
       CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        name TEXT,
-        role TEXT DEFAULT 'USER',
-        isActive INTEGER DEFAULT 1,
-        isDemo INTEGER DEFAULT 0,
-        isTemporaryDemo INTEGER DEFAULT 0,
-        demoExpiresAt TEXT,
-        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        name VARCHAR(255),
+        role VARCHAR(20) DEFAULT 'USER' CHECK (role IN ('USER', 'ADMIN')),
+        isActive BOOLEAN DEFAULT true,
+        isDemo BOOLEAN DEFAULT false,
+        isTemporaryDemo BOOLEAN DEFAULT false,
+        demoExpiresAt TIMESTAMP,
+        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `, (err) => {
-      clearTimeout(tableTimeout);
-      if (err) {
-        console.error('❌ [DEBUG] Erreur création table users:', err);
-        console.error('❌ [DEBUG] Détails erreur:', {
-          code: (err as any).code,
-          message: err.message,
-          stack: err.stack
-        });
-        clearTimeout(timeout);
-        reject(err);
+    `);
+    console.log('✅ [DEBUG] Table users créée');
+
+    // Table files
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS files (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        filename VARCHAR(255) NOT NULL,
+        originalName VARCHAR(255) NOT NULL,
+        mimetype VARCHAR(100) NOT NULL,
+        size BIGINT NOT NULL,
+        path VARCHAR(500) NOT NULL,
+        isEncrypted BOOLEAN DEFAULT false,
+        uploadedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expiresAt TIMESTAMP,
+        userId UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    console.log('✅ [DEBUG] Table files créée');
+
+    // Table shares
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS shares (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        token VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255),
+        maxDownloads INTEGER,
+        downloads INTEGER DEFAULT 0,
+        expiresAt TIMESTAMP,
+        isActive BOOLEAN DEFAULT true,
+        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        fileId UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+        userId UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(255),
+        description TEXT
+      )
+    `);
+    console.log('✅ [DEBUG] Table shares créée');
+
+    // Table sessions
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        userId UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token VARCHAR(255) UNIQUE NOT NULL,
+        expiresAt TIMESTAMP NOT NULL,
+        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ [DEBUG] Table sessions créée');
+
+    // Index pour améliorer les performances
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      CREATE INDEX IF NOT EXISTS idx_files_userId ON files(userId);
+      CREATE INDEX IF NOT EXISTS idx_shares_token ON shares(token);
+      CREATE INDEX IF NOT EXISTS idx_shares_userId ON shares(userId);
+      CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+      CREATE INDEX IF NOT EXISTS idx_sessions_userId ON sessions(userId);
+    `);
+    console.log('✅ [DEBUG] Index créés');
+  }
+
+  private async seedData(client: PoolClient): Promise<void> {
+    console.log('🔧 [DEBUG] Début du seed des données...');
+
+    try {
+      // Vérifier si des utilisateurs existent déjà
+      const userCount = await client.query('SELECT COUNT(*) FROM users');
+      if (parseInt(userCount.rows[0].count) > 0) {
+        console.log('✅ [DEBUG] Utilisateurs existants trouvés, pas de seed nécessaire');
         return;
       }
-      console.log('✅ [DEBUG] Table users créée avec succès');
+
+      // Créer le compte admin principal
+      const adminPassword = await bcrypt.hash('Emynopass2024!', 10);
+      const adminId = uuidv4();
       
-      // Table Files
-      console.log('🔧 [DEBUG] Création de la table files...');
-      this.db.run(`
-        CREATE TABLE IF NOT EXISTS files (
-          id TEXT PRIMARY KEY,
-          filename TEXT NOT NULL,
-          originalName TEXT NOT NULL,
-          mimetype TEXT NOT NULL,
-          size INTEGER NOT NULL,
-          path TEXT NOT NULL,
-          isEncrypted INTEGER DEFAULT 0,
-          uploadedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-          expiresAt TEXT,
-          userId TEXT NOT NULL,
-          FOREIGN KEY (userId) REFERENCES users (id)
-        )
-      `, (err) => {
-        if (err) {
-          console.error('❌ [DEBUG] Erreur création table files:', err);
-          clearTimeout(timeout);
-          reject(err);
-          return;
-        }
-        console.log('✅ [DEBUG] Table files créée avec succès');
-        
-        // Table Shares
-        console.log('🔧 [DEBUG] Création de la table shares...');
-        this.db.run(`
-          CREATE TABLE IF NOT EXISTS shares (
-            id TEXT PRIMARY KEY,
-            token TEXT UNIQUE NOT NULL,
-            password TEXT,
-            maxDownloads INTEGER,
-            downloads INTEGER DEFAULT 0,
-            expiresAt TEXT,
-            isActive INTEGER DEFAULT 1,
-            createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-            fileId TEXT NOT NULL,
-            userId TEXT NOT NULL,
-            title TEXT,
-            description TEXT,
-            FOREIGN KEY (fileId) REFERENCES files (id),
-            FOREIGN KEY (userId) REFERENCES users (id)
-          )
-        `, (err) => {
-          if (err) {
-            console.error('❌ [DEBUG] Erreur création table shares:', err);
-            clearTimeout(timeout);
-            reject(err);
-            return;
-          }
-          console.log('✅ [DEBUG] Table shares créée avec succès');
-          
-          // Migrations
-          console.log('🔧 [DEBUG] Exécution des migrations...');
-          this.db.run('ALTER TABLE shares ADD COLUMN title TEXT', (err) => {
-            if (err && !err.message.includes('duplicate column name')) {
-              console.error('❌ [DEBUG] Erreur migration title:', err);
-            } else {
-              console.log('✅ [DEBUG] Migration title OK');
-            }
-            
-            this.db.run('ALTER TABLE shares ADD COLUMN description TEXT', (err) => {
-              if (err && !err.message.includes('duplicate column name')) {
-                console.error('❌ [DEBUG] Erreur migration description:', err);
-              } else {
-                console.log('✅ [DEBUG] Migration description OK');
-              }
-              
-              // Table Sessions
-              console.log('🔧 [DEBUG] Création de la table sessions...');
-              this.db.run(`
-                CREATE TABLE IF NOT EXISTS sessions (
-                  id TEXT PRIMARY KEY,
-                  userId TEXT NOT NULL,
-                  token TEXT UNIQUE NOT NULL,
-                  expiresAt TEXT NOT NULL,
-                  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-                  FOREIGN KEY (userId) REFERENCES users (id)
-                )
-              `, (err) => {
-                if (err) {
-                  console.error('❌ [DEBUG] Erreur création table sessions:', err);
-                  clearTimeout(timeout);
-                  reject(err);
-                  return;
-                }
-                console.log('✅ [DEBUG] Table sessions créée avec succès');
-                console.log('✅ [DEBUG] Toutes les tables créées avec succès');
-                
-                // Passer au seed des données
-                console.log('🔧 [DEBUG] Début du seed des données...');
-                this.seedData()
-                  .then(() => {
-                    console.log('✅ [DEBUG] Seed des données terminé');
-                    clearTimeout(timeout);
-                    resolve();
-                  })
-                  .catch((error) => {
-                    console.error('❌ [DEBUG] Erreur seed des données:', error);
-                    clearTimeout(timeout);
-                    reject(error);
-                  });
-              });
-            });
-          });
-        });
-      });
-    });
-  }
-  
+      await client.query(`
+        INSERT INTO users (id, email, password, name, role, isActive, isDemo)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (email) DO NOTHING
+      `, [adminId, 'polosko@emynopass.dev', adminPassword, 'Polosko', 'ADMIN', true, false]);
 
-
-  private async seedData(): Promise<void> {
-    return new Promise(async (resolve, reject) => {
-      // Ajouter un timeout pour le seed des données
-      const seedTimeout = setTimeout(() => {
-        console.error('❌ [DEBUG] Timeout lors du seed des données (15 secondes)');
-        reject(new Error('Timeout lors du seed des données'));
-      }, 15000);
+      // Créer un compte de démonstration
+      const demoPassword = await bcrypt.hash('demo2024', 10);
+      const demoId = uuidv4();
       
-      try {
-        console.log('🔧 [DEBUG] Début du seed des données utilisateurs...');
-        
-        // Créer le compte admin principal
-        console.log('🔧 [DEBUG] Hachage du mot de passe admin...');
-        const adminPassword = await bcrypt.hash('Emynopass2024!', 10);
+      await client.query(`
+        INSERT INTO users (id, email, password, name, role, isActive, isDemo)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (email) DO NOTHING
+      `, [demoId, 'demo@emynopass.dev', demoPassword, 'Utilisateur Démo', 'USER', true, true]);
 
-        const admin: User = {
-          id: uuidv4(),
-          email: 'polosko@emynopass.dev',
-          password: adminPassword,
-          name: 'Polosko',
-          role: 'ADMIN',
-          isActive: true,
-          isDemo: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-
-        // Créer un compte de démonstration
-        console.log('🔧 [DEBUG] Hachage du mot de passe démo...');
-        const demoPassword = await bcrypt.hash('demo2024', 10);
-
-        const demoUser: User = {
-          id: uuidv4(),
-          email: 'demo@emynopass.dev',
-          password: demoPassword,
-          name: 'Utilisateur Démo',
-          role: 'USER',
-          isActive: true,
-          isDemo: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-
-        // Insérer le compte admin
-        console.log('🔧 [DEBUG] Insertion du compte admin...');
-        this.db.run(`
-          INSERT OR IGNORE INTO users (id, email, password, name, role, isActive, isDemo, createdAt, updatedAt)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [admin.id, admin.email, admin.password, admin.name, admin.role, admin.isActive ? 1 : 0, admin.isDemo ? 1 : 0, admin.createdAt, admin.updatedAt], (err) => {
-          if (err) {
-            console.error('❌ [DEBUG] Erreur insertion admin:', err);
-          } else {
-            console.log('✅ [DEBUG] Compte admin inséré avec succès');
-          }
-        });
-
-        // Insérer le compte démo
-        console.log('🔧 [DEBUG] Insertion du compte démo...');
-        this.db.run(`
-          INSERT OR IGNORE INTO users (id, email, password, name, role, isActive, isDemo, createdAt, updatedAt)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [demoUser.id, demoUser.email, demoUser.password, demoUser.name, demoUser.role, demoUser.isActive ? 1 : 0, demoUser.isDemo ? 1 : 0, demoUser.createdAt, demoUser.updatedAt], (err) => {
-          if (err) {
-            console.error('❌ [DEBUG] Erreur insertion démo:', err);
-            clearTimeout(seedTimeout);
-            reject(err);
-          } else {
-            console.log('✅ [DEBUG] Compte démo inséré avec succès');
-            console.log('✅ [DEBUG] User accounts created successfully');
-            console.log('👑 Admin: polosko@emynopass.dev / Emynopass2024!');
-            console.log('👤 Demo: demo@emynopass.dev / demo2024');
-            console.log('🔧 [DEBUG] Seed des données terminé avec succès');
-            clearTimeout(seedTimeout);
-            resolve();
-          }
-        });
-      } catch (error) {
-        console.error('❌ [DEBUG] Erreur dans seedData:', error);
-        clearTimeout(seedTimeout);
-        reject(error);
-      }
-    });
+      console.log('✅ [DEBUG] Comptes utilisateurs créés');
+      console.log('👑 Admin: polosko@emynopass.dev / Emynopass2024!');
+      console.log('👤 Demo: demo@emynopass.dev / demo2024');
+    } catch (error) {
+      console.error('❌ [DEBUG] Erreur seed des données:', error);
+      throw error;
+    }
   }
 
   // Méthodes pour les utilisateurs
   async findUserByEmail(email: string): Promise<User | null> {
-    return new Promise((resolve, reject) => {
-      this.db.get(
-        'SELECT * FROM users WHERE email = ?',
-        [email],
-        (err, row: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            if (row) {
-              resolve({
-                ...row,
-                isActive: row.isActive === 1,
-                isDemo: row.isDemo === 1,
-                isTemporaryDemo: row.isTemporaryDemo === 1
-              });
-            } else {
-              resolve(null);
-            }
-          }
-        }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'SELECT * FROM users WHERE email = $1',
+        [email]
       );
-    });
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      return this.mapUserFromRow(result.rows[0]);
+    } finally {
+      client.release();
+    }
   }
 
   async getAllUsers(): Promise<User[]> {
-    return new Promise((resolve, reject) => {
-      this.db.all(
-        'SELECT id, email, name, role, isActive, isDemo, isTemporaryDemo, demoExpiresAt, createdAt, updatedAt FROM users ORDER BY createdAt DESC',
-        (err, rows: any[]) => {
-          if (err) {
-            reject(err);
-          } else {
-            const users = rows.map(row => ({
-              ...row,
-              isActive: row.isActive === 1,
-              isDemo: row.isDemo === 1,
-              isTemporaryDemo: row.isTemporaryDemo === 1
-            }));
-            resolve(users);
-          }
-        }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'SELECT id, email, name, role, isActive, isDemo, isTemporaryDemo, demoExpiresAt, createdAt, updatedAt FROM users ORDER BY createdAt DESC'
       );
-    });
+      
+      return result.rows.map((row: any) => this.mapUserFromRow(row));
+    } finally {
+      client.release();
+    }
   }
 
   async getUserCount(): Promise<number> {
-    return new Promise((resolve, reject) => {
-      this.db.get(
-        'SELECT COUNT(*) as count FROM users',
-        (err, row: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(row.count);
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query('SELECT COUNT(*) as count FROM users');
+      return parseInt(result.rows[0].count);
+    } finally {
+      client.release();
+    }
   }
 
   async createUser(user: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
-    return new Promise((resolve, reject) => {
+    const client = await this.pool.connect();
+    try {
       const id = uuidv4();
       const now = new Date().toISOString();
       
-      this.db.run(`
+      const result = await client.query(`
         INSERT INTO users (id, email, password, name, role, isActive, isDemo, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [id, user.email, user.password, user.name, user.role, user.isActive ? 1 : 0, user.isDemo ? 1 : 0, now, now], function(err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({
-            id,
-            createdAt: now,
-            updatedAt: now,
-            ...user
-          });
-        }
-      });
-    });
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING *
+      `, [id, user.email, user.password, user.name, user.role, user.isActive, user.isDemo, now, now]);
+      
+      return this.mapUserFromRow(result.rows[0]);
+    } finally {
+      client.release();
+    }
   }
 
   async updateUser(userId: string, updates: Partial<Omit<User, 'id' | 'createdAt'>>): Promise<boolean> {
-    return new Promise((resolve, reject) => {
+    const client = await this.pool.connect();
+    try {
       // Vérifier si l'utilisateur est Polosko (protection)
-      this.db.get('SELECT email FROM users WHERE id = ?', [userId], (err, row: any) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        
-        if (row?.email === 'polosko@emynopass.dev') {
-          reject(new Error('Impossible de modifier le compte leader'));
-          return;
-        }
+      const userResult = await client.query('SELECT email FROM users WHERE id = $1', [userId]);
+      if (userResult.rows.length === 0) {
+        return false;
+      }
+      
+      if (userResult.rows[0].email === 'polosko@emynopass.dev') {
+        throw new Error('Impossible de modifier le compte leader');
+      }
 
-        const fields = [];
-        const values = [];
-        
-        if (updates.email) {
-          fields.push('email = ?');
-          values.push(updates.email);
-        }
-        if (updates.password) {
-          fields.push('password = ?');
-          values.push(updates.password);
-        }
-        if (updates.name) {
-          fields.push('name = ?');
-          values.push(updates.name);
-        }
-        if (updates.role) {
-          fields.push('role = ?');
-          values.push(updates.role);
-        }
-        if (updates.isActive !== undefined) {
-          fields.push('isActive = ?');
-          values.push(updates.isActive ? 1 : 0);
-        }
-        
-        fields.push('updatedAt = ?');
-        values.push(new Date().toISOString());
-        values.push(userId);
+      const fields = [];
+      const values = [];
+      let paramIndex = 1;
+      
+      if (updates.email) {
+        fields.push(`email = $${paramIndex++}`);
+        values.push(updates.email);
+      }
+      if (updates.password) {
+        fields.push(`password = $${paramIndex++}`);
+        values.push(updates.password);
+      }
+      if (updates.name) {
+        fields.push(`name = $${paramIndex++}`);
+        values.push(updates.name);
+      }
+      if (updates.role) {
+        fields.push(`role = $${paramIndex++}`);
+        values.push(updates.role);
+      }
+      if (updates.isActive !== undefined) {
+        fields.push(`isActive = $${paramIndex++}`);
+        values.push(updates.isActive);
+      }
+      
+      if (fields.length === 0) {
+        return false;
+      }
 
-        this.db.run(
-          `UPDATE users SET ${fields.join(', ')} WHERE id = ?`,
-          values,
-          function(err) {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(this.changes > 0);
-            }
-          }
-        );
-      });
-    });
+      fields.push(`updatedAt = $${paramIndex++}`);
+      values.push(new Date().toISOString());
+      values.push(userId);
+
+      const result = await client.query(
+        `UPDATE users SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
+        values
+      );
+      
+      return (result.rowCount || 0) > 0;
+    } finally {
+      client.release();
+    }
   }
 
   async deleteUser(userId: string): Promise<boolean> {
-    return new Promise((resolve, reject) => {
+    const client = await this.pool.connect();
+    try {
       // Vérifier si l'utilisateur est Polosko (protection)
-      this.db.get('SELECT email FROM users WHERE id = ?', [userId], (err, row: any) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        
-        if (row?.email === 'polosko@emynopass.dev') {
-          reject(new Error('Impossible de supprimer le compte leader'));
-          return;
-        }
+      const userResult = await client.query('SELECT email FROM users WHERE id = $1', [userId]);
+      if (userResult.rows.length === 0) {
+        return false;
+      }
+      
+      if (userResult.rows[0].email === 'polosko@emynopass.dev') {
+        throw new Error('Impossible de supprimer le compte leader');
+      }
 
-        this.db.run(
-          'DELETE FROM users WHERE id = ?',
-          [userId],
-          function(err) {
-            if (err) {
-              reject(err);
-            } else {
-              resolve(this.changes > 0);
-            }
-          }
-        );
-      });
-    });
+      const result = await client.query('DELETE FROM users WHERE id = $1', [userId]);
+      return (result.rowCount || 0) > 0;
+    } finally {
+      client.release();
+    }
   }
 
   async getUserById(userId: string): Promise<User | null> {
-    return new Promise((resolve, reject) => {
-      this.db.get(
-        'SELECT * FROM users WHERE id = ?',
-        [userId],
-        (err, row: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            if (row) {
-              resolve({
-                ...row,
-                isActive: row.isActive === 1,
-                isDemo: row.isDemo === 1,
-                isTemporaryDemo: row.isTemporaryDemo === 1
-              });
-            } else {
-              resolve(null);
-            }
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query('SELECT * FROM users WHERE id = $1', [userId]);
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      return this.mapUserFromRow(result.rows[0]);
+    } finally {
+      client.release();
+    }
   }
 
   // Méthodes pour les fichiers
   async createFile(file: Omit<FileRecord, 'id' | 'uploadedAt'>): Promise<FileRecord> {
-    return new Promise((resolve, reject) => {
+    const client = await this.pool.connect();
+    try {
       const id = uuidv4();
       const uploadedAt = new Date().toISOString();
       
-      this.db.run(`
+      const result = await client.query(`
         INSERT INTO files (id, filename, originalName, mimetype, size, path, isEncrypted, uploadedAt, expiresAt, userId)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [id, file.filename, file.originalName, file.mimetype, file.size, file.path, file.isEncrypted ? 1 : 0, uploadedAt, file.expiresAt, file.userId], function(err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({
-            id,
-            uploadedAt,
-            ...file
-          });
-        }
-      });
-    });
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING *
+      `, [id, file.filename, file.originalName, file.mimetype, file.size, file.path, file.isEncrypted, uploadedAt, file.expiresAt, file.userId]);
+      
+      return this.mapFileFromRow(result.rows[0]);
+    } finally {
+      client.release();
+    }
   }
 
   async getFilesByUser(userId: string): Promise<FileRecord[]> {
-    return new Promise((resolve, reject) => {
-      this.db.all(
-        'SELECT * FROM files WHERE userId = ? ORDER BY uploadedAt DESC',
-        [userId],
-        (err, rows: any[]) => {
-          if (err) {
-            reject(err);
-          } else {
-            const files = rows.map(row => ({
-              ...row,
-              isEncrypted: row.isEncrypted === 1
-            }));
-            resolve(files);
-          }
-        }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'SELECT * FROM files WHERE userId = $1 ORDER BY uploadedAt DESC',
+        [userId]
       );
-    });
+      
+      return result.rows.map((row: any) => this.mapFileFromRow(row));
+    } finally {
+      client.release();
+    }
   }
 
   async getAllFiles(): Promise<FileRecord[]> {
-    return new Promise((resolve, reject) => {
-      this.db.all(
-        `SELECT f.*, u.email as userEmail, u.name as userName 
-         FROM files f 
-         LEFT JOIN users u ON f.userId = u.id 
-         ORDER BY f.uploadedAt DESC`,
-        (err, rows: any[]) => {
-          if (err) {
-            reject(err);
-          } else {
-            const files = rows.map(row => ({
-              ...row,
-              isEncrypted: row.isEncrypted === 1
-            }));
-            resolve(files);
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT f.*, u.email as userEmail, u.name as userName 
+        FROM files f 
+        LEFT JOIN users u ON f.userId = u.id 
+        ORDER BY f.uploadedAt DESC
+      `);
+      
+      return result.rows.map((row: any) => this.mapFileFromRow(row));
+    } finally {
+      client.release();
+    }
   }
 
   async getFileById(id: string): Promise<FileRecord | null> {
-    return new Promise((resolve, reject) => {
-      this.db.get(
-        'SELECT * FROM files WHERE id = ?',
-        [id],
-        (err, row: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            if (row) {
-              resolve({
-                ...row,
-                isEncrypted: row.isEncrypted === 1
-              });
-            } else {
-              resolve(null);
-            }
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query('SELECT * FROM files WHERE id = $1', [id]);
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      return this.mapFileFromRow(result.rows[0]);
+    } finally {
+      client.release();
+    }
   }
 
   async deleteFile(id: string): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        'DELETE FROM files WHERE id = ?',
-        [id],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes > 0);
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query('DELETE FROM files WHERE id = $1', [id]);
+      return (result.rowCount || 0) > 0;
+    } finally {
+      client.release();
+    }
   }
 
   async deleteExpiredFiles(): Promise<number> {
-    return new Promise((resolve, reject) => {
+    const client = await this.pool.connect();
+    try {
       const now = new Date().toISOString();
-      this.db.run(
-        'DELETE FROM files WHERE expiresAt IS NOT NULL AND expiresAt < ?',
-        [now],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes);
-          }
-        }
+      const result = await client.query(
+        'DELETE FROM files WHERE expiresAt IS NOT NULL AND expiresAt < $1',
+        [now]
       );
-    });
+      return result.rowCount || 0;
+    } finally {
+      client.release();
+    }
   }
 
   // Méthodes pour les sessions
   async createSession(userId: string, token: string, expiresAt: string): Promise<void> {
-    return new Promise((resolve, reject) => {
+    const client = await this.pool.connect();
+    try {
       const id = uuidv4();
-      this.db.run(
-        'INSERT INTO sessions (id, userId, token, expiresAt) VALUES (?, ?, ?, ?)',
-        [id, userId, token, expiresAt],
-        (err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
-        }
+      await client.query(
+        'INSERT INTO sessions (id, userId, token, expiresAt) VALUES ($1, $2, $3, $4)',
+        [id, userId, token, expiresAt]
       );
-    });
+    } finally {
+      client.release();
+    }
   }
 
   async findSessionByToken(token: string): Promise<{ userId: string, expiresAt: string } | null> {
-    return new Promise((resolve, reject) => {
-      this.db.get(
-        'SELECT userId, expiresAt FROM sessions WHERE token = ?',
-        [token],
-        (err, row: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(row || null);
-          }
-        }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'SELECT userId, expiresAt FROM sessions WHERE token = $1',
+        [token]
       );
-    });
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      return result.rows[0];
+    } finally {
+      client.release();
+    }
   }
 
   async deleteSession(token: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        'DELETE FROM sessions WHERE token = ?',
-        [token],
-        (err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      await client.query('DELETE FROM sessions WHERE token = $1', [token]);
+    } finally {
+      client.release();
+    }
   }
 
   async deleteExpiredSessions(): Promise<number> {
-    return new Promise((resolve, reject) => {
+    const client = await this.pool.connect();
+    try {
       const now = new Date().toISOString();
-      this.db.run(
-        'DELETE FROM sessions WHERE expiresAt < ?',
-        [now],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes);
-          }
-        }
+      const result = await client.query(
+        'DELETE FROM sessions WHERE expiresAt < $1',
+        [now]
       );
-    });
+      return result.rowCount || 0;
+    } finally {
+      client.release();
+    }
   }
 
   // Méthodes pour les partages
   async createShare(share: Omit<Share, 'id' | 'createdAt' | 'downloads'>): Promise<Share> {
-    return new Promise((resolve, reject) => {
+    const client = await this.pool.connect();
+    try {
       const id = uuidv4();
       const createdAt = new Date().toISOString();
       
-      this.db.run(`
+      const result = await client.query(`
         INSERT INTO shares (id, token, password, maxDownloads, downloads, expiresAt, isActive, createdAt, fileId, userId, title, description)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        RETURNING *
       `, [
         id, 
         share.token, 
@@ -776,349 +540,306 @@ class Database {
         share.maxDownloads, 
         0, 
         share.expiresAt, 
-        share.isActive ? 1 : 0, 
+        share.isActive, 
         createdAt, 
         share.fileId, 
         share.userId,
         share.title,
         share.description
-      ], function(err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({
-            id,
-            createdAt,
-            downloads: 0,
-            ...share
-          });
-        }
-      });
-    });
+      ]);
+      
+      return this.mapShareFromRow(result.rows[0]);
+    } finally {
+      client.release();
+    }
   }
 
   async findShareByToken(token: string): Promise<Share | null> {
-    return new Promise((resolve, reject) => {
-      this.db.get(
-        'SELECT * FROM shares WHERE token = ? AND isActive = 1',
-        [token],
-        (err, row: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            if (row) {
-              resolve({
-                ...row,
-                isActive: row.isActive === 1,
-                isDemo: row.isDemo === 1,
-                isTemporaryDemo: row.isTemporaryDemo === 1
-              });
-            } else {
-              resolve(null);
-            }
-          }
-        }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'SELECT * FROM shares WHERE token = $1 AND isActive = true',
+        [token]
       );
-    });
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      return this.mapShareFromRow(result.rows[0]);
+    } finally {
+      client.release();
+    }
   }
 
   async getSharesByUser(userId: string): Promise<Share[]> {
-    return new Promise((resolve, reject) => {
-      this.db.all(
-        `SELECT s.*, f.originalName, f.size, f.mimetype 
-         FROM shares s 
-         LEFT JOIN files f ON s.fileId = f.id 
-         WHERE s.userId = ? 
-         ORDER BY s.createdAt DESC`,
-        [userId],
-        (err, rows: any[]) => {
-          if (err) {
-            reject(err);
-          } else {
-            const shares = rows.map(row => ({
-              ...row,
-              isActive: row.isActive === 1
-            }));
-            resolve(shares);
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT s.*, f.originalName, f.size, f.mimetype 
+        FROM shares s 
+        LEFT JOIN files f ON s.fileId = f.id 
+        WHERE s.userId = $1 
+        ORDER BY s.createdAt DESC
+      `, [userId]);
+      
+      return result.rows.map((row: any) => this.mapShareFromRow(row));
+    } finally {
+      client.release();
+    }
   }
 
   async incrementShareDownload(token: string): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        'UPDATE shares SET downloads = downloads + 1 WHERE token = ?',
-        [token],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes > 0);
-          }
-        }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'UPDATE shares SET downloads = downloads + 1 WHERE token = $1',
+        [token]
       );
-    });
+      return (result.rowCount || 0) > 0;
+    } finally {
+      client.release();
+    }
   }
 
   async updateShare(shareId: string, updates: Partial<Share>): Promise<boolean> {
-    return new Promise((resolve, reject) => {
+    const client = await this.pool.connect();
+    try {
       const fields = [];
       const values = [];
+      let paramIndex = 1;
       
       if (updates.password !== undefined) {
-        fields.push('password = ?');
+        fields.push(`password = $${paramIndex++}`);
         values.push(updates.password);
       }
       if (updates.maxDownloads !== undefined) {
-        fields.push('maxDownloads = ?');
+        fields.push(`maxDownloads = $${paramIndex++}`);
         values.push(updates.maxDownloads);
       }
       if (updates.expiresAt !== undefined) {
-        fields.push('expiresAt = ?');
+        fields.push(`expiresAt = $${paramIndex++}`);
         values.push(updates.expiresAt);
       }
       if (updates.isActive !== undefined) {
-        fields.push('isActive = ?');
-        values.push(updates.isActive ? 1 : 0);
+        fields.push(`isActive = $${paramIndex++}`);
+        values.push(updates.isActive);
       }
       if (updates.title !== undefined) {
-        fields.push('title = ?');
+        fields.push(`title = $${paramIndex++}`);
         values.push(updates.title);
       }
       if (updates.description !== undefined) {
-        fields.push('description = ?');
+        fields.push(`description = $${paramIndex++}`);
         values.push(updates.description);
       }
 
       if (fields.length === 0) {
-        resolve(false);
-        return;
+        return false;
       }
 
       values.push(shareId);
 
-      this.db.run(
-        `UPDATE shares SET ${fields.join(', ')} WHERE id = ?`,
-        values,
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes > 0);
-          }
-        }
+      const result = await client.query(
+        `UPDATE shares SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
+        values
       );
-    });
+      
+      return (result.rowCount || 0) > 0;
+    } finally {
+      client.release();
+    }
   }
 
   async getShareById(shareId: string): Promise<Share | null> {
-    return new Promise((resolve, reject) => {
-      this.db.get(
-        'SELECT * FROM shares WHERE id = ?',
-        [shareId],
-        (err, row: any) => {
-          if (err) {
-            reject(err);
-          } else if (row) {
-            resolve({
-              ...row,
-              isActive: row.isActive === 1
-            });
-          } else {
-            resolve(null);
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query('SELECT * FROM shares WHERE id = $1', [shareId]);
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      return this.mapShareFromRow(result.rows[0]);
+    } finally {
+      client.release();
+    }
   }
 
   async deleteShare(shareId: string): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        'DELETE FROM shares WHERE id = ?',
-        [shareId],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes > 0);
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query('DELETE FROM shares WHERE id = $1', [shareId]);
+      return (result.rowCount || 0) > 0;
+    } finally {
+      client.release();
+    }
   }
 
   async deleteSharesByFileId(fileId: string): Promise<number> {
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        'DELETE FROM shares WHERE fileId = ?',
-        [fileId],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes);
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query('DELETE FROM shares WHERE fileId = $1', [fileId]);
+      return result.rowCount || 0;
+    } finally {
+      client.release();
+    }
   }
 
   async getOrphanedShares(): Promise<Share[]> {
-    return new Promise((resolve, reject) => {
-      this.db.all(
-        `SELECT s.* FROM shares s 
-         LEFT JOIN files f ON s.fileId = f.id 
-         WHERE f.id IS NULL`,
-        [],
-        (err, rows: any[]) => {
-          if (err) {
-            reject(err);
-          } else {
-            const shares = rows.map(row => ({
-              ...row,
-              isActive: row.isActive === 1
-            }));
-            resolve(shares);
-          }
-        }
-      );
-    });
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT s.* FROM shares s 
+        LEFT JOIN files f ON s.fileId = f.id 
+        WHERE f.id IS NULL
+      `);
+      
+      return result.rows.map((row: any) => this.mapShareFromRow(row));
+    } finally {
+      client.release();
+    }
   }
 
   async deleteOrphanedShares(): Promise<number> {
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        `DELETE FROM shares WHERE fileId NOT IN (SELECT id FROM files)`,
-        [],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes);
-          }
-        }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'DELETE FROM shares WHERE fileId NOT IN (SELECT id FROM files)'
       );
-    });
+      return result.rowCount || 0;
+    } finally {
+      client.release();
+    }
   }
 
   // Méthodes pour les comptes démo temporaires
   async createTemporaryDemoUser(): Promise<User> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const id = uuidv4();
-        const email = `demo-${id.substring(0, 8)}@emynopass.dev`;
-        const password = await bcrypt.hash('demo2024', 10);
-        const now = new Date().toISOString();
-        const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes
+    const client = await this.pool.connect();
+    try {
+      const id = uuidv4();
+      const email = `demo-${id.substring(0, 8)}@emynopass.dev`;
+      const password = await bcrypt.hash('demo2024', 10);
+      const now = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes
 
-        this.db.run(
-          `INSERT INTO users (id, email, password, name, role, isActive, isDemo, isTemporaryDemo, demoExpiresAt, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [id, email, password, 'Utilisateur Démo Temporaire', 'USER', 1, 1, 1, expiresAt, now, now],
-          function(err) {
-            if (err) {
-              reject(err);
-            } else {
-              resolve({
-                id,
-                email,
-                password,
-                name: 'Utilisateur Démo Temporaire',
-                role: 'USER',
-                isActive: true,
-                isDemo: true,
-                isTemporaryDemo: true,
-                demoExpiresAt: expiresAt,
-                createdAt: now,
-                updatedAt: now
-              });
-            }
-          }
-        );
-      } catch (error) {
-        reject(error);
-      }
-    });
+      const result = await client.query(`
+        INSERT INTO users (id, email, password, name, role, isActive, isDemo, isTemporaryDemo, demoExpiresAt, createdAt, updatedAt)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING *
+      `, [id, email, password, 'Utilisateur Démo Temporaire', 'USER', true, true, true, expiresAt, now, now]);
+      
+      return this.mapUserFromRow(result.rows[0]);
+    } finally {
+      client.release();
+    }
   }
 
   async getExpiredDemoUsers(): Promise<User[]> {
-    return new Promise((resolve, reject) => {
-      this.db.all(
-        `SELECT * FROM users WHERE isTemporaryDemo = 1 AND demoExpiresAt < ?`,
-        [new Date().toISOString()],
-        (err, rows: any[]) => {
-          if (err) {
-            reject(err);
-          } else {
-            const users = rows.map(row => ({
-              ...row,
-              isActive: row.isActive === 1,
-              isDemo: row.isDemo === 1,
-              isTemporaryDemo: row.isTemporaryDemo === 1
-            }));
-            resolve(users);
-          }
-        }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'SELECT * FROM users WHERE isTemporaryDemo = true AND demoExpiresAt < $1',
+        [new Date().toISOString()]
       );
-    });
+      
+      return result.rows.map((row: any) => this.mapUserFromRow(row));
+    } finally {
+      client.release();
+    }
   }
 
   async deleteExpiredDemoUsers(): Promise<number> {
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        `DELETE FROM users WHERE isTemporaryDemo = 1 AND demoExpiresAt < ?`,
-        [new Date().toISOString()],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes);
-          }
-        }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'DELETE FROM users WHERE isTemporaryDemo = true AND demoExpiresAt < $1',
+        [new Date().toISOString()]
       );
-    });
+      return result.rowCount || 0;
+    } finally {
+      client.release();
+    }
   }
 
   async getUserStorageUsed(userId: string): Promise<number> {
-    return new Promise((resolve, reject) => {
-      this.db.get(
-        'SELECT COALESCE(SUM(size), 0) as totalSize FROM files WHERE userId = ?',
-        [userId],
-        (err, row: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(row?.totalSize || 0);
-          }
-        }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        'SELECT COALESCE(SUM(size), 0) as totalSize FROM files WHERE userId = $1',
+        [userId]
       );
-    });
+      return parseInt(result.rows[0].totalsize) || 0;
+    } finally {
+      client.release();
+    }
   }
 
   async optimize(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.db.run('VACUUM', (err) => {
-        if (err) {
-          console.error('Erreur optimisation DB:', err);
-          reject(err);
-        } else {
-          console.log('✅ Base de données optimisée');
-          resolve();
-        }
-      });
-    });
+    const client = await this.pool.connect();
+    try {
+      await client.query('VACUUM ANALYZE');
+      console.log('✅ Base de données PostgreSQL optimisée');
+    } catch (error) {
+      console.error('Erreur optimisation DB:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async close(): Promise<void> {
-    return new Promise((resolve) => {
-      this.db.close(() => {
-        console.log('📦 Database connection closed');
-        resolve();
-      });
-    });
+    await this.pool.end();
+    console.log('📦 Database connection pool closed');
+  }
+
+  // Méthodes utilitaires pour mapper les résultats
+  private mapUserFromRow(row: any): User {
+    return {
+      id: row.id,
+      email: row.email,
+      password: row.password,
+      name: row.name,
+      role: row.role,
+      isActive: row.isactive,
+      isDemo: row.isdemo,
+      isTemporaryDemo: row.istemporarydemo,
+      demoExpiresAt: row.demoexpiresat,
+      createdAt: row.createdat,
+      updatedAt: row.updatedat
+    };
+  }
+
+  private mapFileFromRow(row: any): FileRecord {
+    return {
+      id: row.id,
+      filename: row.filename,
+      originalName: row.originalname,
+      mimetype: row.mimetype,
+      size: parseInt(row.size),
+      path: row.path,
+      isEncrypted: row.isencrypted,
+      uploadedAt: row.uploadedat,
+      expiresAt: row.expiresat,
+      userId: row.userid
+    };
+  }
+
+  private mapShareFromRow(row: any): Share {
+    return {
+      id: row.id,
+      token: row.token,
+      password: row.password,
+      maxDownloads: row.maxdownloads,
+      downloads: row.downloads,
+      expiresAt: row.expiresat,
+      isActive: row.isactive,
+      createdAt: row.createdat,
+      fileId: row.fileid,
+      userId: row.userid,
+      title: row.title,
+      description: row.description
+    };
   }
 }
 
