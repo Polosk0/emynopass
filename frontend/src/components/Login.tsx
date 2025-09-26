@@ -44,7 +44,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
