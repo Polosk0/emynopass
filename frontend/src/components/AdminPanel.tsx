@@ -836,8 +836,8 @@ const AdminPanel: React.FC = () => {
                       ></div>
                     </div>
                     <div className="flex justify-between text-xs text-gray-400 mt-1">
-                      <span>{storageData.disk.usedFormatted} utilisé</span>
-                      <span>{storageData.available.totalFormatted} libre</span>
+                      <span>0 GB</span>
+                      <span>{storageData.available.totalFormatted} disponible</span>
                     </div>
                   </div>
                   

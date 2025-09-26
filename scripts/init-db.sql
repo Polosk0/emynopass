@@ -11,10 +11,9 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- Mais on peut ajouter des configurations spécifiques ici
 
 -- Configuration des paramètres de performance
--- Note: pg_stat_statements nécessite l'extension correspondante
--- ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';
+ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';
 ALTER SYSTEM SET track_activity_query_size = 2048;
--- ALTER SYSTEM SET pg_stat_statements.track = 'all';
+ALTER SYSTEM SET pg_stat_statements.track = 'all';
 
 -- Configuration de la mémoire
 ALTER SYSTEM SET shared_buffers = '256MB';

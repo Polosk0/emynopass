@@ -7,7 +7,11 @@ import path from 'path';
 import fs from 'fs';
 import { promisify } from 'util';
 import { exec } from 'child_process';
-import database from './database';
+// Utiliser SQLite en développement, PostgreSQL en production
+const isDevelopment = process.env.NODE_ENV !== 'production';
+const database = isDevelopment 
+  ? require('./database-sqlite').default 
+  : require('./database').default;
 import uploadRoutes from './routes/upload';
 import authRoutes from './routes/auth';
 import adminRoutes from './routes/admin';
@@ -68,7 +72,7 @@ app.get('/api/users', async (req, res) => {
   try {
     const users = await database.getAllUsers();
     // Enlever les mots de passe pour la sécurité
-    const safeUsers = users.map(user => ({
+    const safeUsers = users.map((user: any) => ({
       id: user.id,
       email: user.email,
       name: user.name,
@@ -94,7 +98,7 @@ app.get('/api/public/stats', async (req, res) => {
     const files = await database.getAllFiles();
     
     // Calculer la taille totale des fichiers
-    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    const totalSize = files.reduce((sum: number, file: any) => sum + file.size, 0);
     
     res.json({
       userCount,

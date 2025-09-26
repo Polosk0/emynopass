@@ -2,7 +2,7 @@
 FROM node:18-alpine AS builder
 
 # Installer les dépendances système
-RUN apk add --no-cache wget sqlite curl
+RUN apk add --no-cache wget curl
 
 # Définir le répertoire de travail
 WORKDIR /app
@@ -15,14 +15,11 @@ COPY backend/ ./
 RUN npm run build
 
 # Créer les dossiers avec permissions
-RUN mkdir -p /app/data /app/uploads /app/logs
-
-# Créer une base de données SQLite vide pour éviter les erreurs
-RUN touch /app/data/emynopass.db
+RUN mkdir -p /app/uploads /app/logs
 
 # S'assurer que tous les dossiers appartiennent à l'utilisateur node
-RUN chown -R node:node /app/data /app/uploads /app/logs
-RUN chmod -R 755 /app/data /app/uploads /app/logs
+RUN chown -R node:node /app/uploads /app/logs
+RUN chmod -R 755 /app/uploads /app/logs
 
 # Vérifier que la compilation a réussi
 RUN ls -la /app/dist/

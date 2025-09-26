@@ -44,7 +44,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -195,20 +195,17 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     <span className="text-sm font-medium text-gray-300">Stockage serveur</span>
                   </div>
                   <span className="text-xs text-gray-400">
-                    {storageInfo.disk.usedFormatted} / {storageInfo.disk.totalFormatted}
+                    {storageInfo.available.totalFormatted} / {storageInfo.disk.totalFormatted}
                   </span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
                   <div 
                     className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all duration-1000 ease-out"
-                    style={{ width: `${storageInfo.disk.used > 0 ? (storageInfo.disk.used / storageInfo.disk.total) * 100 : 0}%` }}
+                    style={{ width: `${storageInfo.available.percentage}%` }}
                   ></div>
                 </div>
                 <div className="text-xs text-center text-gray-400 mt-2">
-                  {storageInfo.disk.used > 0 ? 
-                    `${((storageInfo.disk.used / storageInfo.disk.total) * 100).toFixed(1)}% utilisé` : 
-                    '0.0% utilisé'
-                  }
+                  {storageInfo.available.percentage.toFixed(1)}% disponible
                 </div>
               </div>
             )}
