@@ -9,15 +9,15 @@ create_test_file() {
     local size_mb=$1
     local filename="/tmp/test-${size_mb}mb.bin"
     
-    echo "📁 Création d'un fichier de test de ${size_mb}MB..."
+    echo "📁 Création d'un fichier de test de ${size_mb}MB..." >&2
     dd if=/dev/zero of="$filename" bs=1M count=$size_mb 2>/dev/null
     
     if [ -f "$filename" ]; then
         local actual_size=$(du -h "$filename" | cut -f1)
-        echo "✅ Fichier créé: $filename (${actual_size})"
+        echo "✅ Fichier créé: $filename (${actual_size})" >&2
         echo "$filename"
     else
-        echo "❌ Erreur lors de la création du fichier"
+        echo "❌ Erreur lors de la création du fichier" >&2
         echo ""
     fi
 }
@@ -161,7 +161,7 @@ main() {
         # Créer le fichier de test
         local test_file=$(create_test_file $size)
         
-        if [ -n "$test_file" ]; then
+        if [ -n "$test_file" ] && [ -f "$test_file" ]; then
             # Tester l'upload
             if test_upload "$test_file" $size; then
                 results+=("✅ ${size}MB: RÉUSSI")
