@@ -114,7 +114,7 @@ const AdminPanel: React.FC = () => {
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
 
   const fetchStats = async () => {
     try {

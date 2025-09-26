@@ -18,7 +18,7 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,

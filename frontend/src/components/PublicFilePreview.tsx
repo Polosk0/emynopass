@@ -74,7 +74,7 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
         headers['X-Share-Password'] = password;
       }
 
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
       const response = await fetch(`${API_BASE_URL}/api/share/preview-info/${shareToken}`, { headers });
 
       if (!response.ok) {
@@ -118,7 +118,7 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
         headers['X-Share-Password'] = password;
       }
 
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
       const response = await fetch(`${API_BASE_URL}/api/share/preview/${shareToken}`, { headers });
 
       if (!response.ok) {
@@ -141,7 +141,7 @@ const PublicFilePreview: React.FC<PublicFilePreviewProps> = ({
         headers['X-Share-Password'] = password;
       }
 
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
       const response = await fetch(`${API_BASE_URL}/api/share/preview/${shareToken}`, { headers });
 
       if (!response.ok) {

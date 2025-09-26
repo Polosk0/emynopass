@@ -70,7 +70,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onUserCreated, o
     role: 'USER' as 'USER' | 'ADMIN'
   });
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
 
   // Fonction pour supprimer les comptes démo expirés
   const cleanExpiredDemoAccounts = async () => {

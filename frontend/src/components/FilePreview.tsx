@@ -58,7 +58,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
 
       console.log('Tentative de prévisualisation du fichier:', fileId);
 
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
       const response = await fetch(`${API_BASE_URL}/api/upload/preview-info/${fileId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -100,7 +100,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
   const fetchPreviewBlob = async (): Promise<string> => {
     try {
       const token = localStorage.getItem('token');
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
       const response = await fetch(`${API_BASE_URL}/api/upload/preview/${fileId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -121,7 +121,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileId, filename, onClose }) 
   const fetchTextContent = async (): Promise<void> => {
     try {
       const token = localStorage.getItem('token');
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
       const response = await fetch(`${API_BASE_URL}/api/upload/preview/${fileId}`, {
         headers: {
           'Authorization': `Bearer ${token}`

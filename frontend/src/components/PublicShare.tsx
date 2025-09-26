@@ -39,7 +39,7 @@ const PublicShare: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
 
   useEffect(() => {
     if (token) {

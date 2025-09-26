@@ -64,7 +64,7 @@ const ShareManager: React.FC<ShareManagerProps> = ({ files, onRefresh }) => {
     expiresInHours: '168' // 7 jours par défaut
   });
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://emynona.cloud';
 
   const fetchShares = async () => {
     try {
