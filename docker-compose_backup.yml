@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: emynopass-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=emynopass
+      - POSTGRES_USER=emynopass
+      - POSTGRES_PASSWORD=emynopass
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    ports:
+      - "0.0.0.0:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - emynopass-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emynopass -d emynopass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: emynopass-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=emynopass
+      - DB_USER=emynopass
+      - DB_PASSWORD=emynopass
+      - JWT_SECRET=default-jwt-secret-change-in-production
+      - PORT=3001
+      - FRONTEND_URL=https://emynona.cloud
+    ports:
+      - "0.0.0.0:3001:3001"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    user: "1001:1001"
+    networks:
+      - emynopass-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: emynopass-frontend
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=https://emynona.cloud
+    ports:
+      - "0.0.0.0:3000:3000"
+    networks:
+      - emynopass-network
+    healthcheck:
+      disable: true
+
+  redis:
+    image: redis:alpine
+    container_name: emynopass-redis
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - emynopass-network
+    command: redis-server --appendonly yes
+
+  nginx:
+    image: nginx:alpine
+    container_name: emynopass-nginx
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:80:80"
+    volumes:
+      - ./docker/nginx-simple.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./uploads:/var/www/uploads:ro
+      - ./logs:/var/log/nginx:rw
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - emynopass-network
+
+volumes:
+  emynopass-data:
+  emynopass-uploads:
+  emynopass-logs:
+  postgres-data:
+  redis-data:
+
+networks:
+  emynopass-network:
+    driver: bridge

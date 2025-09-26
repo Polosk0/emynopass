@@ -34,7 +34,11 @@ EXPOSE 3001
 # Variables d'environnement
 ENV NODE_ENV=production
 ENV PORT=3001
-ENV DATABASE_PATH=/app/data/emynopass.db
+ENV DB_HOST=postgres
+ENV DB_PORT=5432
+ENV DB_NAME=emynopass
+ENV DB_USER=emynopass
+ENV DB_PASSWORD=emynopass
 
 # Changer vers l'utilisateur node pour éviter les problèmes de permissions
 USER node
