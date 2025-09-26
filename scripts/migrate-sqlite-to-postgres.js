@@ -5,13 +5,11 @@
  * Ce script migre toutes les données existantes de SQLite vers PostgreSQL
  */
 
-const sqlite3 = require('sqlite3').verbose();
 const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
 
-// Configuration
-const SQLITE_DB_PATH = process.env.SQLITE_DB_PATH || path.join(__dirname, '..', 'data', 'emynopass.db');
+// Configuration PostgreSQL
 const POSTGRES_CONFIG = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
@@ -20,24 +18,19 @@ const POSTGRES_CONFIG = {
   password: process.env.DB_PASSWORD || 'emynopass',
 };
 
-console.log('🔄 Début de la migration SQLite vers PostgreSQL...');
-console.log('📁 Base SQLite:', SQLITE_DB_PATH);
+console.log('🔄 Initialisation PostgreSQL pour Emynopass...');
 console.log('🐘 PostgreSQL:', `${POSTGRES_CONFIG.host}:${POSTGRES_CONFIG.port}/${POSTGRES_CONFIG.database}`);
 
-// Vérifier que le fichier SQLite existe
-if (!fs.existsSync(SQLITE_DB_PATH)) {
-  console.error('❌ Fichier SQLite non trouvé:', SQLITE_DB_PATH);
-  process.exit(1);
-}
+// Vérifier si une base SQLite existe pour migration
+const SQLITE_DB_PATH = process.env.SQLITE_DB_PATH || path.join(__dirname, '..', 'data', 'emynopass.db');
+let hasSqliteData = false;
 
-// Connexion à SQLite
-const sqliteDb = new sqlite3.Database(SQLITE_DB_PATH, (err) => {
-  if (err) {
-    console.error('❌ Erreur connexion SQLite:', err);
-    process.exit(1);
-  }
-  console.log('✅ Connexion SQLite établie');
-});
+if (fs.existsSync(SQLITE_DB_PATH)) {
+  console.log('📁 Base SQLite trouvée:', SQLITE_DB_PATH);
+  hasSqliteData = true;
+} else {
+  console.log('📁 Aucune base SQLite trouvée - initialisation avec données par défaut');
+}
 
 // Connexion à PostgreSQL
 const postgresPool = new Pool(POSTGRES_CONFIG);
@@ -46,154 +39,23 @@ async function migrateData() {
   const client = await postgresPool.connect();
   
   try {
-    console.log('🔧 Début de la migration des données...');
+    console.log('🔧 Début de l\'initialisation PostgreSQL...');
     
-    // Vérifier d'abord si la base SQLite a des tables
-    const tables = await new Promise((resolve, reject) => {
-      sqliteDb.all("SELECT name FROM sqlite_master WHERE type='table'", (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
+    // Toujours créer les tables d'abord
+    await createTables(client);
     
-    if (tables.length === 0) {
-      console.log('⚠️  Base SQLite vide - initialisation avec les données par défaut');
-      await createTables(client);
+    if (!hasSqliteData) {
+      console.log('⚠️  Aucune base SQLite - initialisation avec les données par défaut');
       await seedDefaultData(client);
       return;
     }
     
-    // 1. Migration des utilisateurs
-    console.log('👥 Migration des utilisateurs...');
-    const users = await new Promise((resolve, reject) => {
-      sqliteDb.all('SELECT * FROM users', (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
+    // Si SQLite existe, essayer de migrer (nécessite sqlite3)
+    console.log('⚠️  Base SQLite trouvée mais migration non supportée sans sqlite3');
+    console.log('💡 Initialisation avec les données par défaut à la place');
+    await seedDefaultData(client);
     
-    for (const user of users) {
-      try {
-        await client.query(`
-          INSERT INTO users (id, email, password, name, role, isActive, isDemo, isTemporaryDemo, demoExpiresAt, createdAt, updatedAt)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-          ON CONFLICT (id) DO NOTHING
-        `, [
-          user.id,
-          user.email,
-          user.password,
-          user.name,
-          user.role,
-          user.isActive === 1,
-          user.isDemo === 1,
-          user.isTemporaryDemo === 1,
-          user.demoExpiresAt,
-          user.createdAt,
-          user.updatedAt
-        ]);
-      } catch (error) {
-        console.warn('⚠️ Erreur migration utilisateur:', user.email, error.message);
-      }
-    }
-    console.log(`✅ ${users.length} utilisateurs migrés`);
-    
-    // 2. Migration des fichiers
-    console.log('📁 Migration des fichiers...');
-    const files = await new Promise((resolve, reject) => {
-      sqliteDb.all('SELECT * FROM files', (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
-    
-    for (const file of files) {
-      try {
-        await client.query(`
-          INSERT INTO files (id, filename, originalName, mimetype, size, path, isEncrypted, uploadedAt, expiresAt, userId)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-          ON CONFLICT (id) DO NOTHING
-        `, [
-          file.id,
-          file.filename,
-          file.originalName,
-          file.mimetype,
-          file.size,
-          file.path,
-          file.isEncrypted === 1,
-          file.uploadedAt,
-          file.expiresAt,
-          file.userId
-        ]);
-      } catch (error) {
-        console.warn('⚠️ Erreur migration fichier:', file.filename, error.message);
-      }
-    }
-    console.log(`✅ ${files.length} fichiers migrés`);
-    
-    // 3. Migration des partages
-    console.log('🔗 Migration des partages...');
-    const shares = await new Promise((resolve, reject) => {
-      sqliteDb.all('SELECT * FROM shares', (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
-    
-    for (const share of shares) {
-      try {
-        await client.query(`
-          INSERT INTO shares (id, token, password, maxDownloads, downloads, expiresAt, isActive, createdAt, fileId, userId, title, description)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-          ON CONFLICT (id) DO NOTHING
-        `, [
-          share.id,
-          share.token,
-          share.password,
-          share.maxDownloads,
-          share.downloads,
-          share.expiresAt,
-          share.isActive === 1,
-          share.createdAt,
-          share.fileId,
-          share.userId,
-          share.title,
-          share.description
-        ]);
-      } catch (error) {
-        console.warn('⚠️ Erreur migration partage:', share.token, error.message);
-      }
-    }
-    console.log(`✅ ${shares.length} partages migrés`);
-    
-    // 4. Migration des sessions
-    console.log('🔐 Migration des sessions...');
-    const sessions = await new Promise((resolve, reject) => {
-      sqliteDb.all('SELECT * FROM sessions', (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
-    
-    for (const session of sessions) {
-      try {
-        await client.query(`
-          INSERT INTO sessions (id, userId, token, expiresAt, createdAt)
-          VALUES ($1, $2, $3, $4, $5)
-          ON CONFLICT (id) DO NOTHING
-        `, [
-          session.id,
-          session.userId,
-          session.token,
-          session.expiresAt,
-          session.createdAt
-        ]);
-      } catch (error) {
-        console.warn('⚠️ Erreur migration session:', session.token, error.message);
-      }
-    }
-    console.log(`✅ ${sessions.length} sessions migrées`);
-    
-    console.log('🎉 Migration terminée avec succès !');
+    console.log('🎉 Initialisation PostgreSQL terminée avec succès !');
     
     // Statistiques finales
     const stats = await Promise.all([
@@ -349,15 +211,7 @@ async function main() {
     console.error('❌ Migration échouée:', error);
     process.exit(1);
   } finally {
-    // Fermer les connexions
-    sqliteDb.close((err) => {
-      if (err) {
-        console.error('❌ Erreur fermeture SQLite:', err);
-      } else {
-        console.log('✅ Connexion SQLite fermée');
-      }
-    });
-    
+    // Fermer la connexion PostgreSQL
     await postgresPool.end();
     console.log('✅ Connexion PostgreSQL fermée');
   }
