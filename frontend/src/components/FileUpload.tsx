@@ -243,9 +243,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       xhr.open('POST', uploadUrl, true);
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       
-      // Optimisations pour gros fichiers
-      xhr.timeout = 0; // Pas de timeout
-      xhr.withCredentials = false; // Éviter les cookies
+      // Configuration standard
+      xhr.timeout = 300000; // 5 minutes
       
       console.log('XHR configured, starting upload...');
 
@@ -268,7 +267,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
           const timeDiff = (currentTime - lastTime) / 1000; // en secondes
           const loadedDiff = event.loaded - lastLoaded;
           
-          if (timeDiff > 0.1) { // Mettre à jour toutes les 100ms pour plus de réactivité
+          if (timeDiff > 0.5) { // Mettre à jour toutes les 500ms
             const speed = loadedDiff / timeDiff; // bytes par seconde
             const speedMBps = (speed / (1024 * 1024)).toFixed(1);
             

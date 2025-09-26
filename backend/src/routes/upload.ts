@@ -24,17 +24,12 @@ const storage = multer.diskStorage({
   }
 });
 
-// Configuration multer dynamique selon le rôle - optimisée pour gros fichiers
+// Configuration multer dynamique selon le rôle
 const createUploadMiddleware = (isAdmin: boolean) => {
   return multer({
     storage,
     limits: {
-      fileSize: isAdmin ? 50 * 1024 * 1024 * 1024 : 10 * 1024 * 1024 * 1024, // 50GB pour admins, 10GB pour autres
-      fieldSize: 1024 * 1024, // 1MB pour les champs
-      fieldNameSize: 100,
-      files: 10,
-      parts: 20,
-      headerPairs: 2000
+      fileSize: isAdmin ? 100 * 1024 * 1024 : 10 * 1024 * 1024 // 100MB pour admins, 10MB pour autres
     },
     fileFilter: (req, file, cb) => {
       // Accepter tous les types de fichiers
@@ -74,14 +69,14 @@ router.post('/files', authenticateToken, dynamicUpload, handleMulterError, async
       const newFilesSize = files.reduce((total, file) => total + file.size, 0);
       
       // Limites différentes pour compte démo vs normal
-      const maxUserStorage = isDemoAccount ? 100 * 1024 * 1024 : 200 * 1024 * 1024 * 1024; // 100 MB vs 200 GB
-      const maxFileSize = isDemoAccount ? 10 * 1024 * 1024 : 10 * 1024 * 1024 * 1024; // 10 MB vs 10 GB
+      const maxUserStorage = isDemoAccount ? 100 * 1024 * 1024 : 1 * 1024 * 1024 * 1024; // 100 MB vs 1 GB
+      const maxFileSize = isDemoAccount ? 10 * 1024 * 1024 : 10 * 1024 * 1024; // 10 MB pour tous
       const maxFileCount = isDemoAccount ? 3 : 10; // 3 fichiers vs 10 fichiers
       
       // Vérifier la limite de stockage
       if (userStorageUsed + newFilesSize > maxUserStorage) {
         const remainingSpace = maxUserStorage - userStorageUsed;
-        const limitText = isDemoAccount ? '100 MB' : '200 GB';
+        const limitText = isDemoAccount ? '100 MB' : '1 GB';
         res.status(413).json({
           error: `Limite de stockage atteinte. Vous avez utilisé ${formatFileSize(userStorageUsed)} sur ${limitText}. Espace restant: ${formatFileSize(remainingSpace)}`
         });
@@ -219,8 +214,8 @@ router.get('/storage-info', authenticateToken, async (req: AuthRequest, res: Res
       res.json(adminResponse);
     } else {
       // Limites pour utilisateurs normaux et démo
-      const maxStorage = isDemoAccount ? 100 * 1024 * 1024 : 200 * 1024 * 1024 * 1024; // 100 MB vs 200 GB
-      const maxFileSize = isDemoAccount ? 10 * 1024 * 1024 : 10 * 1024 * 1024 * 1024; // 10 MB vs 10 GB
+      const maxStorage = isDemoAccount ? 100 * 1024 * 1024 : 1 * 1024 * 1024 * 1024; // 100 MB vs 1 GB
+      const maxFileSize = isDemoAccount ? 10 * 1024 * 1024 : 10 * 1024 * 1024; // 10 MB pour tous
       const remainingStorage = maxStorage - usedStorage;
       
       res.json({
