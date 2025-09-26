@@ -200,6 +200,17 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       return;
     }
 
+    // Debug: afficher les informations des fichiers
+    console.log('=== DEBUG UPLOAD START ===');
+    console.log('Files to upload:', filesToUpload.map(f => ({
+      name: f.name,
+      size: f.size,
+      sizeMB: (f.size / 1024 / 1024).toFixed(2) + ' MB',
+      type: f.type
+    })));
+    console.log('API Base URL:', API_BASE_URL);
+    console.log('Token available:', !!token);
+
     setUploading(true);
     setError(null);
     setSuccessMessage(null);
@@ -226,12 +237,17 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
 
     try {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_BASE_URL}/api/upload/files`, true);
+      const uploadUrl = `${API_BASE_URL}/api/upload/files`;
+      console.log('Upload URL:', uploadUrl);
+      
+      xhr.open('POST', uploadUrl, true);
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       
       // Optimisations pour gros fichiers
       xhr.timeout = 0; // Pas de timeout
       xhr.withCredentials = false; // Éviter les cookies
+      
+      console.log('XHR configured, starting upload...');
 
       let startTime = Date.now();
       let lastLoaded = 0;
@@ -241,6 +257,11 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
         if (event.lengthComputable) {
           const percent = Math.round((event.loaded / event.total) * 100);
           setUploadProgress(percent);
+          
+          // Debug: afficher le progrès
+          if (percent % 10 === 0) { // Log tous les 10%
+            console.log(`Upload progress: ${percent}% (${(event.loaded / 1024 / 1024).toFixed(2)} MB / ${(event.total / 1024 / 1024).toFixed(2)} MB)`);
+          }
           
           // Calculer la vitesse et le temps restant
           const currentTime = Date.now();
@@ -271,8 +292,12 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       };
 
       xhr.onload = async () => {
+        console.log('Upload completed. Status:', xhr.status);
+        console.log('Response:', xhr.responseText);
+        
         if (xhr.status === 200) {
           const result = JSON.parse(xhr.responseText);
+          console.log('Upload success:', result);
           setSuccessMessage(result.message || 'Fichiers uploadés avec succès !');
           setFilesToUpload([]);
           setUploadStats(null);
@@ -304,13 +329,19 @@ const FileUpload: React.FC<FileUploadProps> = ({ onUploadComplete }) => {
       };
 
       xhr.onerror = () => {
+        console.error('Upload error - network or server issue');
+        console.error('XHR status:', xhr.status);
+        console.error('XHR statusText:', xhr.statusText);
+        console.error('XHR response:', xhr.responseText);
         setError('Erreur réseau ou serveur inaccessible.');
         setUploading(false);
         setUploadProgress(0);
         setUploadStats(null);
       };
 
+      console.log('Sending FormData...');
       xhr.send(formData);
+      console.log('FormData sent, waiting for response...');
 
     } catch (err) {
       console.error('Erreur inattendue:', err);
