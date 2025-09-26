@@ -4,9 +4,9 @@ echo "🚀 DÉPLOIEMENT VPS - EMYNOPASS"
 echo "================================"
 echo ""
 
-# Vérifier qu'on est sur le VPS
-if [[ ! -d "/var/www/emynopass" ]]; then
-    echo "❌ Erreur: Ce script doit être exécuté sur le VPS dans /var/www/emynopass"
+# Vérifier qu'on est dans le bon répertoire
+if [[ ! -f "docker-compose.yml" ]]; then
+    echo "❌ Erreur: Ce script doit être exécuté dans le répertoire du projet (avec docker-compose.yml)"
     exit 1
 fi
 
