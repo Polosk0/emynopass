@@ -30,8 +30,8 @@ app.use(cors({
 }));
 app.use(compression());
 app.use(morgan('combined'));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '50gb' }));
+app.use(express.urlencoded({ extended: true, limit: '50gb' }));
 
 // Routes de base
 app.get('/', (req, res) => {
