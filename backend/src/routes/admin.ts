@@ -39,9 +39,10 @@ router.get('/stats', async (req: AuthRequest, res): Promise<void> => {
     }).reverse();
     
     const uploadsPerDay = last7Days.map(date => {
-      const dayFiles = files.filter(file => 
-        file.uploadedAt.startsWith(date)
-      );
+      const dayFiles = files.filter(file => {
+        const uploadedDate = new Date(file.uploadedAt).toISOString().split('T')[0];
+        return uploadedDate === date;
+      });
       return {
         date,
         count: dayFiles.length,
